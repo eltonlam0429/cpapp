@@ -5,7 +5,7 @@
   const tabbar = document.getElementById('tabbar');
 
   /* ================= 設定與身分 ================= */
-  const SECTION_DEF = { question: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
+  const SECTION_DEF = { question: false, dolist: true, trips: true, capsule: true, vault: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
   function S() {
     const r = Store.get('settings') || {};
     const extra = Object.assign({}, r); delete extra.id; delete extra._by; delete extra._at;
@@ -31,19 +31,24 @@
   function nm(w) { const n = (S().names[w] || '').trim(); return n || (w === ME() ? '我' : '另一半'); }
   function hasName(w) { return !!(S().names[w] || '').trim(); }
   function initial(w) { return hasName(w) ? Array.from(nm(w).trim())[0].toUpperCase() : (w === ME() ? '我' : '+'); }
+  // 男方藍、女方綠（在個人檔案可以改誰是男方）
+  const sex = w => ((S().male || 'a') === w ? 'm' : 'f');
+  const WHO_COLOR = { m: '#3d7bff', f: '#22c99a', both: '#ff5d8f' };
+  const colorOf = w => w === 'both' || !w ? WHO_COLOR.both : WHO_COLOR[sex(w)];
+  const HEART = '<svg class="hrt" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.3-9.2C1.5 8.6 3.6 5.5 7 5.5c2 0 3.3 1.1 5 3 1.7-1.9 3-3 5-3 3.4 0 5.5 3.1 4.3 6.3C19.5 16.4 12 21 12 21z" fill="#ff5d8f"/></svg>';
   function avatarPhoto(w) { const r = Store.get('avatar_' + w); return r && r.photo ? r.photo : ''; }
   function avatar(w, cls) {
     const ph = avatarPhoto(w);
     if (ph) return '<div class="avatar photo ' + (cls || '') + '"><img src="' + ph + '" alt=""></div>';
     const ghost = !hasName(w) && w !== ME();
-    return '<div class="avatar ' + (w === 'b' ? 'b ' : '') + (ghost ? 'ghost ' : '') + (cls || '') + '">' + esc(initial(w)) + '</div>';
+    return '<div class="avatar ' + sex(w) + ' ' + (ghost ? 'ghost ' : '') + (cls || '') + '">' + esc(initial(w)) + '</div>';
   }
   function paired() {
     const o = OT();
     return Object.values(Store.s.records).some(r => r.by === o);
   }
   const on = k => S().sections[k] !== false;
-  Object.assign(App, { S, setS, ME, OT, nm, avatar, on, paired });
+  Object.assign(App, { S, setS, ME, OT, nm, avatar, on, paired, sex, colorOf, HEART });
 
   /* ================= 今日問題 ================= */
   const Q_EPOCH = '2024-01-01';
@@ -126,7 +131,8 @@
             else if (j === 0) sub = (ev.time || '') + ' 開始';
             else if (j === L) sub = ev.endTime ? '至 ' + ev.endTime : '最後一天';
             else sub = '全日';
-            out.push({ date: d, title: ev.title, kind: 'event', id: ev.id, color: catColor(EVENT_CATS, ev.cat), sub, place: ev.place || '', multi: L > 0 ? (j + 1) + '/' + (L + 1) : '' });
+            const who = ev.who || 'both';
+            out.push({ date: d, title: ev.title, kind: 'event', id: ev.id, who, color: colorOf(who), sub: (who === 'both' ? '一起' : nm(who)) + (sub ? ' · ' + sub : ''), place: ev.place || '', multi: L > 0 ? (j + 1) + '/' + (L + 1) : '' });
           }
         });
       });
@@ -146,7 +152,17 @@
         }
       }
       ['a', 'b'].forEach(w => {
-        if (D.valid(s.birthday[w])) yearlyBetween(s.birthday[w], from, to).forEach(x => { if (x.n > 0) out.push({ date: x.date, title: nm(w) + ' 生日', kind: 'birthday', who: w, color: '#f59e0b', sub: x.n + ' 歲' }); });
+        if (D.valid(s.birthday[w])) yearlyBetween(s.birthday[w], from, to).forEach(x => { if (x.n > 0) out.push({ date: x.date, title: nm(w) + ' 生日', kind: 'birthday', who: w, color: colorOf(w), sub: x.n + ' 歲' }); });
+      });
+    }
+    if (on('trips')) {
+      Store.all('trip').forEach(tr => {
+        if (!D.valid(tr.start)) return;
+        const end = D.valid(tr.end) && tr.end >= tr.start ? tr.end : tr.start;
+        if (end < from || tr.start > to) return;
+        const L = D.diff(tr.start, end);
+        for (let d = tr.start > from ? tr.start : from; d <= end && d <= to; d = D.add(d, 1))
+          out.push({ date: d, title: '旅行：' + tr.name, kind: 'trip', id: tr.id, who: 'both', color: colorOf('both'), sub: L ? '第 ' + (D.diff(tr.start, d) + 1) + '/' + (L + 1) + ' 天' : '' });
       });
     }
     if (on('period') && App.period) {
@@ -222,47 +238,28 @@
     }
     h += '</div>';
 
-    if (on('question')) {
-      const ws = D.weekStart(t);
-      h += '<div class="week">';
-      for (let i = 0; i < 7; i++) {
-        const d = D.add(ws, i);
-        const lbl = d === t ? '今天' : '週' + D.WD[D.dow(d)];
-        h += '<div class="d' + (answer(me, d) ? ' on' : '') + (d === t ? ' today' : '') + '"><span class="dot"></span>' + lbl + '</div>';
-      }
-      h += '</div>';
-      const st = streak(me);
-      const doneToday = !!answer(me, t);
-      h += '<div class="week-msg">' + (doneToday ? '連續 ' + st + ' 天，明天見' : st > 0 ? '今天回答，連續記錄會變成 ' + (st + 1) + ' 天' : '今天回答，就開始連續記錄') + '</div>';
-      h += '<div class="glass stats" style="margin-bottom:14px"><a href="#/question"><div class="n">' + st + '</div><div class="t">連續' + icon('chevR', 'xs') + '</div></a>' +
-        '<a href="#/todo"><div class="n">' + openTodos().length + '</div><div class="t">未完成' + icon('chevR', 'xs') + '</div></a></div>';
-    } else {
-      h += '<div style="height:18px"></div>';
-    }
-
+    // 1) 螢幕便條（置頂）
     if (on('note')) {
-      const pn = Store.get('note_' + ot);
+      const pn = Store.get('note_' + ot), mn = Store.get('note_' + me);
       if (pn && (pn.text || pn.photo)) {
-        h += '<a href="#/note" class="glass card hero sky note-bubble" style="display:block"><div class="eyebrow">' + icon('phone', 'xs') + esc(nm(ot)) + ' 留給你</div>' +
+        h += '<a href="#/note" class="glass card hero sky note-bubble" style="display:block;margin-top:14px"><div class="eyebrow">' + icon('phone', 'xs') + esc(nm(ot)) + ' 留給你</div>' +
           (pn.text ? '<div class="text">' + esc(pn.text) + '</div>' : '') + (pn.photo ? '<img src="' + pn.photo + '" alt="">' : '') + '</a>';
       }
+      h += '<a href="#/note" class="glass card row" style="gap:12px;' + (pn && (pn.text || pn.photo) ? '' : 'margin-top:14px') + '"><span class="ic" style="width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:rgba(var(--accent-rgb),.09);color:var(--accent-deep)">' + icon('phone', 'sm') + '</span>' +
+        '<span class="grow"><b>螢幕便條</b><div class="small muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (mn && (mn.text || mn.photo) ? '在 ' + esc(nm(ot)) + ' 螢幕上：' + esc(mn.text || '一張相片') : '寫一句，放到 ' + esc(nm(ot)) + ' 的主頁') + '</div></span><span class="faint">' + icon('chevR', 'sm') + '</span></a>';
+    } else h += '<div style="height:14px"></div>';
+
+    // 2) 未完成的待辦
+    if (on('todo')) {
+      const open = openTodos().sort(todoSort).slice(0, 3);
+      h += '<div class="glass card" style="padding-bottom:10px"><a href="#/todo" class="row between"><div class="row" style="gap:8px">' + icon('todo', 'sm') + '<b>未完成的待辦</b><span class="faint small">' + (open.length ? '' : '沒有未完成的事') + '</span></div><span class="faint">' + icon('chevR', 'sm') + '</span></a>';
+      if (!open.length) h += '<div class="muted small" style="margin:8px 0 6px">加第一件：你們想一起做的小事。</div>';
+      else h += open.map(x => '<div class="row" style="margin-top:12px"><button class="check" data-act="todo-toggle" data-id="' + x.id + '">' + icon('check', 'xs') + '</button><button class="grow" data-act="todo-edit" data-id="' + x.id + '" style="text-align:left">' + esc(x.title) + (x.due ? ' <span class="faint small">' + D.smart(x.due) + '</span>' : '') + '</button></div>').join('');
+      h += '</div>';
     }
 
-    if (on('question')) {
-      const q = questionFor(t);
-      const mine = answer(me, t), theirs = answer(ot, t);
-      const status = mine ? (theirs ? '你們都答了，去看看對方怎樣說' : '你答了，等等' + esc(nm(ot))) : (theirs ? esc(nm(ot)) + ' 已經答了，輪到你' : '開始你們的連續記錄');
-      h += '<div class="glass card hero"><div class="eyebrow">' + icon('help', 'xs') + '今日問題</div><div class="q-title">' + esc(q) + '</div><div class="muted small">' + status + '</div>' +
-        '<div class="hero-actions"><a href="#/question" class="btn sm">' + (mine ? '看答案' : '回答') + '</a></div></div>';
-    }
 
     h += '<div class="section-h">一起的時刻</div>';
-
-    if (on('note')) {
-      const mn = Store.get('note_' + me);
-      h += '<a href="#/note" class="glass card tile" style="display:block;min-height:0"><span class="chev">' + icon('chevR', 'sm') + '</span><span class="ic">' + icon('phone', 'sm') + '</span>' +
-        '<div class="tt">螢幕便條</div><div class="ts">' + (mn && (mn.text || mn.photo) ? '對方螢幕上：' + esc(mn.text || '一張相片') : '這裏還是空的') + '</div></a>';
-    }
 
     if (on('calendar')) {
       const up = markers(t, D.add(t, 60)).slice(0, 3);
@@ -277,14 +274,6 @@
     h += '<div class="glass card"><div class="eyebrow" style="color:#c0367f">' + icon('spark', 'xs') + '這星期的一張</div>' +
       '<button data-act="idea-open" style="text-align:left;display:block;width:100%"><div style="font-size:19px;font-weight:700;margin:8px 0 4px">' + esc(idea.t) + '</div><div class="muted small">' + esc(idea.d) + '</div></button>' +
       '<div class="row" style="gap:18px;margin-top:14px"><button class="link-btn" data-act="idea-plan">' + icon('cal', 'xs') + '計劃</button><button class="link-btn" data-act="idea-next">' + icon('refresh', 'xs') + '換一張</button></div></div>';
-
-    if (on('todo')) {
-      const open = openTodos().sort(todoSort).slice(0, 3);
-      h += '<div class="glass card" style="padding-bottom:10px"><a href="#/todo" class="row between"><div class="row" style="gap:8px">' + icon('todo', 'sm') + '<b>未完成的待辦</b><span class="faint small">' + (open.length ? '' : '沒有未完成的事') + '</span></div><span class="faint">' + icon('chevR', 'sm') + '</span></a>';
-      if (!open.length) h += '<div class="muted small" style="margin:8px 0 6px">加第一件：你們想一起做的小事。</div>';
-      else h += open.map(x => '<div class="row" style="margin-top:12px"><button class="check" data-act="todo-toggle" data-id="' + x.id + '">' + icon('check', 'xs') + '</button><button class="grow" data-act="todo-edit" data-id="' + x.id + '" style="text-align:left">' + esc(x.title) + (x.due ? ' <span class="faint small">' + D.smart(x.due) + '</span>' : '') + '</button></div>').join('');
-      h += '</div>';
-    }
 
     const tiles = [];
     if (on('lists')) {
@@ -647,7 +636,11 @@
     for (let d = 1; d <= D.daysInMonth(y, m); d++) {
       const k = D.make(y, m, d);
       const list = byDay[k] || [];
-      const dots = list.slice(0, 3).map(x => '<i style="background:' + x.color + '"></i>').join('');
+      const marks = list.filter(x => x.kind !== 'period');
+      const dots = marks.slice(0, 4).map(x => {
+        const w = x.who || (x.kind === 'birthday' ? x.who : 'both');
+        return (x.kind === 'event' || x.kind === 'trip' || x.kind === 'birthday') && w && w !== 'both' ? '<i style="background:' + colorOf(w) + '"></i>' : HEART;
+      }).join('');
       const dw = D.dow(k);
       const cls = ['cal-day', k === t ? 'today' : '', k === ui.calSel ? 'sel' : '', pd[k] === 'period' ? 'period' : pd[k] === 'pred' ? 'period-pred' : '', dw === 0 || dw === 6 ? 'wkend' : ''].join(' ');
       h += '<button class="' + cls + '" data-act="cal-day" data-k="' + k + '"><span class="num">' + d + '</span><span class="dots">' + dots + '</span></button>';
@@ -730,7 +723,9 @@
     });
   }
   function eventSheet(id, preset) {
-    const x = id ? Store.get(id) : Object.assign({ title: '', place: '', date: D.today(), time: '20:00', end: '', endTime: '', allDay: false, cat: 'date', repeat: 'none' }, preset);
+    const x = id ? Store.get(id) : Object.assign({ title: '', place: '', date: D.today(), time: '20:00', end: '', endTime: '', allDay: false, cat: 'date', repeat: 'none', who: 'both' }, preset);
+    const me = ME(), ot = OT();
+    const whoOpts = [['both', '一起', colorOf('both')], [me, nm(me), colorOf(me)], [ot, nm(ot), colorOf(ot)]];
     if (!x) return;
     const reps = [['none', '不重複'], ['weekly', '每週'], ['monthly', '每月'], ['yearly', '每年']];
     const multi0 = !!(x.end && x.end > x.date);
@@ -739,7 +734,8 @@
       (id ? '' : '<div class="quick glass"><div class="row" style="gap:8px">' + icon('spark', 'sm') + '<input class="grow" name="quick" placeholder="隨手寫一句，例如：10月30日去迪士尼玩全日" autocomplete="off"><button type="button" class="btn sm" data-fill style="padding:0 14px">填好</button></div><div class="small muted" data-qprev style="margin-top:6px;display:none"></div></div>') +
       '<div class="field-wrap with-count"><input class="field" name="title" maxlength="200" placeholder="這是甚麼？" value="' + esc(x.title) + '"><span class="count" data-c>' + x.title.length + '/200</span></div>' +
       '<div class="field-wrap"><input class="field" name="place" maxlength="200" placeholder="地點（可選）" value="' + esc(x.place) + '"></div>' +
-      '<div class="set-row"><div style="font-weight:600">全日</div>' + switchHTML('allDay', x.allDay) + '</div>' +
+      '<div class="label">誰的</div><div class="seg who-seg" data-who>' + whoOpts.map(([k, n, c]) => '<button type="button" data-k="' + k + '" class="' + ((x.who || 'both') === k ? 'on' : '') + '">' + (k === 'both' ? '♥ ' : '<span class="d" style="background:' + c + '"></span>') + esc(n) + '</button>').join('') + '</div>' +
+      '<div class="set-row" style="margin-top:6px"><div style="font-weight:600">全日</div>' + switchHTML('allDay', x.allDay) + '</div>' +
       '<div class="set-row"><div><div style="font-weight:600">多於一天</div><div class="small muted">揀到哪天哪個時間結束</div></div>' + switchHTML('multi', multi0) + '</div>' +
       '<div class="label" data-startlbl>' + (multi0 ? '開始' : '日期') + '</div><div class="two" data-startrow><input type="date" class="field" name="date" value="' + esc(x.date) + '"><input type="time" class="field" name="time" value="' + esc(x.time || '') + '" data-t></div>' +
       '<div data-endbox' + (multi0 ? '' : ' class="hidden"') + '><div class="label">結束</div><div class="two" data-endrow><input type="date" class="field" name="end" value="' + esc(x.end || '') + '"><input type="time" class="field" name="endTime" value="' + esc(x.endTime || '') + '" data-t></div></div>' +
@@ -752,6 +748,8 @@
         f('title').addEventListener('input', cnt);
         let getCat = bindChips(api.el, 'cat');
         let rep = x.repeat || 'none';
+        let who = x.who || 'both';
+        api.$('[data-who]').onclick = e => { const b = e.target.closest('button'); if (!b) return; who = b.dataset.k; api.$$('[data-who] button').forEach(z => z.classList.toggle('on', z === b)); };
         api.$('[data-rep]').onclick = e => { const b = e.target.closest('button'); if (!b) return; rep = b.dataset.k; api.$$('[data-rep] button').forEach(z => z.classList.toggle('on', z === b)); };
         const sync = () => {
           const ad = f('allDay').checked, mu = f('multi').checked;
@@ -814,7 +812,7 @@
           const time = allDay ? '' : f('time').value;
           let endTime = allDay ? '' : end ? f('endTime').value : (x.endTime || '');
           if (!end && endTime && endTime <= time) endTime = '';
-          Store.put('event', Object.assign({}, x, { title, place: f('place').value.trim(), date, time, end, endTime, allDay, cat: getCat() || 'other', repeat: rep }), id);
+          Store.put('event', Object.assign({}, x, { title, place: f('place').value.trim(), date, time, end, endTime, allDay, cat: getCat() || 'other', repeat: rep, who }), id);
           ui.calSel = date; const [yy, mm] = D.ymd(date); ui.calY = yy; ui.calM = mm;
           api.close();
           toast('已加到日曆 · ' + D.smart(date), 'cal');
@@ -878,7 +876,6 @@
     let h = head('所有部分', '開啟的部分有話要說時，就會出現在主頁。', { back: true });
     const L = (k, ic, t, s, href) => on(k) ? row({ ic, t, s, href }) : row({ ic, t, s: '已關掉 · 在「部分」重新開啟', href: '#/parts', cls: 'dim' });
     h += '<div class="label">每一天</div><div class="glass card tight list">' +
-      L('question', 'help', '今日問題', '每天一條，一起回答', '#/question') +
       L('note', 'phone', '螢幕便條', '出現在對方主頁上', '#/note') +
       L('period', 'drop', '經期', '記錄和推算', '#/period') + '</div>';
     h += '<div class="label">一起</div><div class="glass card tight list">' +
@@ -891,14 +888,18 @@
       L('plans', 'card', '計劃', '一個目標，一起存錢', '#/plans') +
       L('jots', 'pencil', '筆記', '你們兩個的本子', '#/jots') +
       L('year', 'spark', '我們的一年', '這十二個月做過的', '#/year') + '</div>';
-    const soon = [['hourglass', '時間囊'], ['gift', '禮物雷達'], ['shield', '保險箱'], ['book', '我們的故事'], ['card', '會員卡'], ['coffee', '一起做'], ['vote', '一起決定']];
-    h += '<div class="label">即將推出</div><div class="glass card tight list">' + soon.map(([ic, t]) => row({ ic, t, cls: 'dim', noChev: true, val: '<span class="tag gray">即將推出</span>' })).join('') + '</div>';
+    h += '<div class="label">一起去、一起做</div><div class="glass card tight list">' +
+      L('dolist', 'coffee', '一起做', '電影、劇集、演唱會、想去的地方', '#/dolist') +
+      L('trips', 'flag', '旅行清單', '每次旅行一張執行李清單', '#/trips') + '</div>';
+    h += '<div class="label">收好的</div><div class="glass card tight list">' +
+      L('capsule', 'hourglass', '時間囊', '到那一天才打開的信', '#/capsule') +
+      L('vault', 'lock', '保險箱', '要密碼才打開', '#/vault') + '</div>';
     h += '<a href="#/parts" class="btn ghost block" style="margin-top:6px">' + icon('sliders', 'sm') + '開關部分</a>';
     return h;
   }
   function pageParts() {
     const sec = S().sections;
-    const items = [['question', 'help', '今日問題'], ['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['period', 'drop', '經期'], ['know', 'note', '要知道的事'], ['plans', 'card', '計劃'], ['jots', 'pencil', '筆記'], ['year', 'spark', '我們的一年']];
+    const items = [['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['period', 'drop', '經期'], ['know', 'note', '要知道的事'], ['plans', 'card', '計劃'], ['jots', 'pencil', '筆記'], ['year', 'spark', '我們的一年'], ['dolist', 'coffee', '一起做'], ['trips', 'flag', '旅行清單'], ['capsule', 'hourglass', '時間囊'], ['vault', 'lock', '保險箱']];
     let h = head('部分', '這個應用程式為你們兩個準備了甚麼。', { back: true });
     h += '<div class="hint-bar">關掉一個部分只是收起來，不會刪除；再開啟，全部都回來。兩部手機會一起改。</div>';
     h += '<div class="glass card tight list">' + items.map(([k, ic, t]) => '<label class="li"><span class="ic">' + icon(ic, 'sm') + '</span><span class="grow tt">' + t + '</span><span class="switch"><input type="checkbox" data-part="' + k + '"' + (sec[k] !== false ? ' checked' : '') + '><span></span></span></label>').join('') + '</div>';
@@ -913,6 +914,7 @@
     h += '<div class="section-h">我們</div><div class="glass card tight list">' +
       row({ act: 'names', ic: 'user', t: '我們的名字', s: esc(nm('a')) + ' &amp; ' + esc(nm('b')) }) +
       row({ act: 'whoami', ic: 'phone', t: '這部裝置是', s: esc(nm(me)) + ' · 每人可以用多部裝置' }) +
+      row({ act: 'gender', ic: 'user', t: '男方 / 女方', s: '男方：' + esc(nm(S().male || 'a')) + '（藍）　女方：' + esc(nm((S().male || 'a') === 'a' ? 'b' : 'a')) + '（綠）' }) +
       row({ act: 'avatar', ic: 'image', t: '我的頭像', s: avatarPhoto(me) ? '已設定' : '還沒有上載' }) +
       row({ act: 'together', ic: 'heart', t: '在一起的日子', s: D.valid(s.together) ? D.ymdText(s.together) : '還沒有設定' }) +
       row({ act: 'birthday', ic: 'cake', t: '生日', s: [me, ot].map(w => esc(nm(w)) + '：' + (D.valid(s.birthday[w]) ? D.md(s.birthday[w]) : '未設定')).join('　') }) + '</div>';
@@ -953,7 +955,7 @@
 
   function pageTrash() {
     const items = Store.trash().sort((a, b) => b.deleted - a.deleted);
-    const lbl = { todo: '待辦', list: '清單', item: '清單項目', wish: '願望', event: '活動', day: '日子', period: '經期記錄', note: '便條', answer: '答案', know: '要知道的事', plan: '計劃', dep: '存款紀錄', jot: '筆記', pday: '經期感覺' };
+    const lbl = { todo: '待辦', list: '清單', item: '清單項目', wish: '願望', event: '活動', day: '日子', period: '經期記錄', note: '便條', answer: '答案', know: '要知道的事', plan: '計劃', dep: '存款紀錄', jot: '筆記', pday: '經期感覺', dodo: '一起做', trip: '旅行', tci: '旅行清單項目', capsule: '時間囊', vault: '保險箱', vfile: '保險箱相片' };
     let h = head('最近刪除', '你們刪除的東西會在這裏留 7 天，之後會自動消失。', { back: true });
     if (!items.length) h += '<div class="empty"><h3 style="font-weight:500;font-size:16px" class="muted">沒有刪除的東西。<br>如果有東西不見了，會在這裏。</h3></div>';
     else h += '<div class="glass card tight list">' + items.map(r => {
@@ -998,6 +1000,7 @@
     return '<div class="welcome"><div class="logo-mark">' + icon('heart', 'lg') + '</div><h1>我們</h1><p class="lead">只屬於你們兩個的小空間</p>' +
       '<div class="glass card"><div class="label" style="margin-top:0">你的名字</div><input class="field" id="wMe" maxlength="30" placeholder="例如：Blue">' +
       '<div class="label">另一半的名字（可以之後再填）</div><input class="field" id="wOther" maxlength="30" placeholder="例如：Sky">' +
+      '<div class="label">你是</div><div class="seg" id="wSex"><button type="button" data-k="m" class="on">男方</button><button type="button" data-k="f">女方</button></div>' +
       '<button class="btn block" style="margin-top:20px" data-act="welcome-start">開始</button></div>' +
       '<button class="btn ghost block" data-act="welcome-join">' + icon('link', 'sm') + '我收到了邀請連結</button></div>';
   }
@@ -1173,7 +1176,7 @@
       fr.readAsDataURL(file);
     });
   }
-  const THEMES = [['blue', '天空藍', 'linear-gradient(145deg,#7ab2ff,#2f6bff)'], ['mint', '薄荷綠', 'linear-gradient(145deg,#8ff0d8,#14a38b)']];
+  const THEMES = [['blue', '天空藍', 'linear-gradient(145deg,#7ab2ff,#2f6bff)'], ['mint', '薄荷綠', 'linear-gradient(145deg,#a3f7de,#1fcf9f)']];
   function applyTheme() {
     const t = Store.device.theme === 'mint' ? 'mint' : 'blue';
     document.documentElement.dataset.theme = t;
@@ -1230,7 +1233,7 @@
   };
   Object.assign(PAGES, App.pages);
   Object.assign(App, { head, row, emptyHTML, render: () => render() });
-  const TAB_OF = { home: 'home', question: 'home', note: 'home', sections: 'home', period: 'home', wishes: 'lists', todo: 'todo', lists: 'lists', list: 'lists', calendar: 'calendar', profile: 'profile', sync: 'profile', trash: 'profile', privacy: 'profile', parts: 'profile', know: 'home', plans: 'home', jots: 'home', year: 'home' };
+  const TAB_OF = { home: 'home', question: 'home', note: 'home', sections: 'home', period: 'home', wishes: 'lists', todo: 'todo', lists: 'lists', list: 'lists', calendar: 'calendar', profile: 'profile', sync: 'profile', trash: 'profile', privacy: 'profile', parts: 'profile', know: 'home', plans: 'home', jots: 'home', year: 'home', dolist: 'home', trips: 'home', trip: 'home', triptpl: 'home', capsule: 'home', vault: 'home' };
   function route() {
     const h = location.hash.replace(/^#\/?/, '') || 'home';
     const [name, ...rest] = h.split('/');
@@ -1402,6 +1405,13 @@
     async 'note-clear'() { if (await confirmSheet('收回便條？', '對方的主頁不會再顯示。', '收回')) Store.remove('note_' + ME(), { silent: true }); },
     'together-info': togetherInfoSheet,
     whoami: whoamiSheet,
+    gender() {
+      const male = S().male || 'a';
+      openSheet('<h2>誰是男方？</h2><p class="small muted" style="margin-top:-8px">日曆上男方的活動是藍點，女方是綠點，一起的是心形。</p>' +
+        ['a', 'b'].map(w => '<button class="opt" data-w="' + w + '">' + avatar(w, 'sm') + '<span>' + esc(nm(w)) + '</span><span class="ck">' + (w === male ? icon('check') : '') + '</span></button>').join(''), api => {
+        api.$$('[data-w]').forEach(b => b.onclick = () => { setS({ male: b.dataset.w }); api.close(); toast('男方是 ' + nm(b.dataset.w), 'check'); });
+      });
+    },
     avatar: avatarSheet,
     theme: themeSheet,
     'check-update'() { if (App.update.available) updateSheet(); else checkUpdate(true); },
@@ -1453,8 +1463,9 @@
     'welcome-start'() {
       const a = document.getElementById('wMe').value.trim(), b = document.getElementById('wOther').value.trim();
       if (!a) { document.getElementById('wMe').focus(); toast('先寫你的名字'); return; }
+      const sx = (document.querySelector('#wSex .on') || {}).dataset;
       Store.setDevice({ me: 'a' });
-      setS({ names: { a, b } });
+      setS({ names: { a, b }, male: sx && sx.k === 'f' ? 'b' : 'a' });
       location.hash = '#/home';
       toast('歡迎，' + a, 'heart');
     },
@@ -1491,6 +1502,8 @@
 
   Object.assign(ACT, App.acts);
   document.addEventListener('click', e => {
+    const sb = e.target.closest('#wSex button');
+    if (sb) { sb.parentNode.querySelectorAll('button').forEach(z => z.classList.toggle('on', z === sb)); return; }
     const el = e.target.closest('[data-act]');
     if (!el || !ACT[el.dataset.act]) return;
     e.preventDefault();
@@ -1498,6 +1511,8 @@
   });
   document.addEventListener('submit', e => {
     if (e.target.closest('[data-form="join-pw"]')) { e.preventDefault(); submitJoinPw(); return; }
+    const g = e.target.closest('[data-form]');
+    if (g && App.forms && App.forms[g.dataset.form]) { e.preventDefault(); App.forms[g.dataset.form](g); return; }
     const f = e.target.closest('[data-form="item-add"]');
     if (!f) return;
     e.preventDefault();

@@ -6,51 +6,72 @@
   const money = n => { const s = A.S().currency || '$'; const v = Math.round(Number(n) || 0); return (v < 0 ? '-' : '') + s + Math.abs(v).toLocaleString('en-US'); };
 
   /* ================= 要知道的事 ================= */
-  const KNOW_CATS = [
-    { k: 'size', n: '尺碼', c: '#2f6bff', sug: ['上衣', '褲', '裙', '鞋', '戒指', '內衣', '手錶帶'] },
-    { k: 'like', n: '喜歡的', c: '#22b07d', sug: ['食物', '飲品', '甜品', '花', '顏色', '香水', '品牌', '咖啡怎樣喝'] },
-    { k: 'dislike', n: '不喜歡的', c: '#ef4444', sug: ['不吃的東西', '氣味', '禮物', '說話'] },
-    { k: 'health', n: '健康', c: '#f59e0b', sug: ['過敏', '常用藥', '血型', '近視度數'] },
-    { k: 'other', n: '其他', c: '#64748b', sug: ['手機型號', '電話殼款式', '想去的地方'] }
+  const KNOW_PRESETS = [
+    { k: 'clothes', n: '衣服尺碼', rows: ['上衣', '褲', '裙', '外套', '內衣', '襪'] },
+    { k: 'shoes', n: '鞋碼', rows: ['EU', 'UK / US', '腳長（cm）'] },
+    { k: 'food', n: '最愛的食物', rows: [''] },
+    { k: 'flower', n: '最愛的花', rows: [''] },
+    { k: 'drink', n: '最愛的飲品', rows: [''] },
+    { k: 'brand', n: '喜歡的牌子', rows: [''] },
+    { k: 'color', n: '最愛的顏色', rows: [''] },
+    { k: 'dislike', n: '不合意的', rows: [''] }
   ];
+  // 舊格式 {cat,label,value} 轉成新格式 {title,rows,note}
+  function kNorm(x) {
+    if (x.rows) return x;
+    return Object.assign({}, x, { title: x.label || '其他', rows: [{ k: '', v: x.value || '' }], note: '' });
+  }
+  function kOrder(x) { const i = KNOW_PRESETS.findIndex(p => p.k === x.preset); return i < 0 ? 99 : i; }
   function pageKnow() {
     const me = A.ME(), ot = A.OT();
     const who = ui.knowWho === 'me' ? me : ot;
-    const mine = who === me;
-    const items = Store.all('know').filter(x => x.who === who);
+    const items = Store.all('know').filter(x => x.who === who).map(kNorm).sort((a, b) => kOrder(a) - kOrder(b) || (a._at || 0) - (b._at || 0));
     let h = A.head('要知道的事', '尺碼、喜好，還有不喜歡的', { back: true });
-    h += '<div class="hint-bar">各人填自己那半。你的另一半看得到，但改不了。</div>';
-    h += '<div class="seg" style="margin-bottom:16px"><button data-act="know-who" data-k="me" class="' + (mine ? 'on' : '') + '">關於我</button><button data-act="know-who" data-k="ot" class="' + (!mine ? 'on' : '') + '">關於 ' + esc(A.nm(ot)) + '</button></div>';
+    h += '<div class="hint-bar">兩個人都可以填，也可以幫對方填和改。</div>';
+    h += '<div class="seg" style="margin-bottom:16px"><button data-act="know-who" data-k="me" class="' + (who === me ? 'on' : '') + '">關於 ' + esc(A.nm(me)) + '</button><button data-act="know-who" data-k="ot" class="' + (who === ot ? 'on' : '') + '">關於 ' + esc(A.nm(ot)) + '</button></div>';
     if (!items.length) {
-      h += mine ? A.emptyHTML('note', '把基本的告訴對方', '尺碼、你喜歡甚麼、不喜歡甚麼。這樣對方就不用猜，也不用問第二次。')
-        : A.emptyHTML('note', esc(A.nm(ot)) + ' 還沒有填', '叫對方填一填，你就不用再猜了。');
+      h += A.emptyHTML('note', '把基本的告訴對方', '尺碼、喜歡甚麼、不喜歡甚麼。這樣對方就不用猜，也不用問第二次。');
     } else {
-      KNOW_CATS.forEach(c => {
-        const its = items.filter(x => x.cat === c.k).sort((a, b) => (a.label || '').localeCompare(b.label || ''));
-        if (!its.length) return;
-        h += '<div class="label"><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + c.c + ';margin-right:6px"></span>' + c.n + '</div><div class="glass card tight list no-icon">' +
-          its.map(x => '<' + (mine ? 'button data-act="know-edit" data-id="' + x.id + '"' : 'div') + ' class="li"><span class="grow"><div class="ts">' + esc(x.label) + '</div><div class="tt">' + esc(x.value) + '</div></span>' + (mine ? '<span class="chev">' + icon('chevR', 'sm') + '</span></button>' : '</div>')).join('') + '</div>';
-      });
+      h += items.map(x => {
+        const rows = (x.rows || []).filter(r => (r.v || '').trim());
+        return '<button class="glass card" style="display:block;width:100%;text-align:left" data-act="know-edit" data-id="' + x.id + '"><div class="row between"><b style="font-size:17px">' + esc(x.title) + '</b><span class="faint">' + icon('pencil', 'xs') + '</span></div>' +
+          (rows.length ? '<div style="margin-top:6px">' + rows.map(r => '<div class="krow">' + (r.k ? '<span class="k">' + esc(r.k) + '</span>' : '') + '<span class="v">' + esc(r.v) + '</span></div>').join('') + '</div>' : '<div class="small faint" style="margin-top:6px">還沒有填</div>') +
+          (x.note ? '<div class="small muted" style="margin-top:8px;white-space:pre-wrap">' + esc(x.note) + '</div>' : '') + '</button>';
+      }).join('');
     }
-    if (mine) h += '<button class="btn fab" data-act="know-new">' + icon('plus') + '加一項</button>';
+    h += '<button class="btn fab" data-act="know-new">' + icon('plus') + '加一項</button>';
     return h;
   }
-  function knowSheet(id) {
-    const x = id ? Store.get(id) : { cat: 'size', label: '', value: '' };
-    const sugHTML = cat => (KNOW_CATS.find(c => c.k === cat) || KNOW_CATS[4]).sug.map(s => '<button type="button" class="chip" data-s="' + esc(s) + '">' + esc(s) + '</button>').join('');
-    openSheet('<h2>' + (id ? '改一項' : '加一項') + '</h2>' + chipsHTML(KNOW_CATS, x.cat, 'cat') +
-      '<div class="label">是甚麼</div><input class="field" name="label" maxlength="40" placeholder="例如：鞋" value="' + esc(x.label) + '">' +
-      '<div class="chips" data-sug style="margin-top:8px">' + sugHTML(x.cat) + '</div>' +
-      '<div class="label">答案</div><input class="field" name="value" maxlength="200" placeholder="例如：EU 37" value="' + esc(x.value) + '">' +
+  function knowWho() { return ui.knowWho === 'me' ? A.ME() : A.OT(); }
+  function knowPick() {
+    const who = knowWho();
+    const have = Store.all('know').filter(x => x.who === who).map(kNorm);
+    openSheet('<h2>加一項</h2>' + KNOW_PRESETS.map(p => {
+      const ex = have.find(x => x.preset === p.k);
+      return '<button class="opt" data-p="' + p.k + '"' + (ex ? ' data-id="' + ex.id + '"' : '') + '><span>' + p.n + '</span><span class="ck small faint">' + (ex ? '已填 · 修改' : '') + '</span></button>';
+    }).join('') + '<button class="opt" data-p="">' + icon('note', 'sm') + '<span>其他</span></button>', api => {
+      api.$$('[data-p]').forEach(b => b.onclick = () => { api.close(); if (b.dataset.id) knowSheet(b.dataset.id); else knowSheet(null, b.dataset.p); });
+    });
+  }
+  function knowSheet(id, presetKey) {
+    const p = KNOW_PRESETS.find(z => z.k === presetKey);
+    const x = id ? kNorm(Store.get(id)) : { who: knowWho(), preset: presetKey || '', title: p ? p.n : '', rows: (p ? p.rows : ['']).map(k => ({ k, v: '' })), note: '' };
+    const rowHTML = r => '<div class="kedit"><input class="field" data-rk placeholder="項目" value="' + esc(r.k) + '"><input class="field" data-rv placeholder="' + (p && p.k === 'clothes' ? '尺碼，例如 S / 27 吋' : '填這裏') + '" value="' + esc(r.v) + '"><button type="button" class="faint" data-rx aria-label="刪除這行">' + icon('x', 'sm') + '</button></div>';
+    openSheet('<h2>' + (id ? '修改' : '加一項') + ' · 關於 ' + esc(A.nm(x.who)) + '</h2>' +
+      '<input class="field" name="title" maxlength="40" placeholder="叫甚麼？例如：戒指尺寸" value="' + esc(x.title) + '"' + (!x.title ? ' autofocus' : '') + '>' +
+      '<div class="label">內容（左邊是項目，右邊是答案）</div><div data-rows>' + x.rows.map(rowHTML).join('') + '</div>' +
+      '<button type="button" class="link-btn" data-add style="margin:4px 2px 6px">' + icon('plus', 'xs') + '加一行</button>' +
+      '<div class="label">備註（可選）</div><textarea class="field" name="note" maxlength="1000" style="min-height:80px" placeholder="例如：牛仔褲要買大一個碼">' + esc(x.note || '') + '</textarea>' +
       '<div class="actions">' + (id ? delBtn : '') + '<button class="btn" data-save>儲存</button></div>', api => {
-      const getCat = bindChips(api.el, 'cat');
-      api.$('[data-chips="cat"]').addEventListener('click', () => setTimeout(() => { api.$('[data-sug]').innerHTML = sugHTML(getCat()); }, 0));
-      api.$('[data-sug]').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; api.$('[name=label]').value = b.dataset.s; api.$('[name=value]').focus(); };
+      const box = api.$('[data-rows]');
+      api.$('[data-add]').onclick = () => { box.insertAdjacentHTML('beforeend', rowHTML({ k: '', v: '' })); box.lastElementChild.querySelector('[data-rk]').focus(); };
+      box.onclick = e => { const b = e.target.closest('[data-rx]'); if (b) b.closest('.kedit').remove(); };
       api.$('[data-save]').onclick = () => {
-        const label = api.$('[name=label]').value.trim(), value = api.$('[name=value]').value.trim();
-        if (!label) { api.$('[name=label]').focus(); return; }
-        if (!value) { api.$('[name=value]').focus(); return; }
-        Store.put('know', { who: A.ME(), cat: getCat() || 'other', label, value }, id); api.close();
+        const title = api.$('[name=title]').value.trim();
+        if (!title) { api.$('[name=title]').focus(); return; }
+        const rows = Array.from(box.querySelectorAll('.kedit')).map(r => ({ k: r.querySelector('[data-rk]').value.trim(), v: r.querySelector('[data-rv]').value.trim() })).filter(r => r.k || r.v);
+        const data = { who: x.who, preset: x.preset || '', title, rows, note: api.$('[name=note]').value.trim() };
+        Store.put('know', data, id); api.close();
       };
       if (id) api.$('[data-del]').onclick = () => { Store.remove(id); api.close(); };
     });
@@ -194,7 +215,9 @@
     const deps = Store.all('dep').filter(d => yearOf(d.date) === Y && d.amt > 0).reduce((a, d) => a + Number(d.amt), 0);
     const jots = Store.all('jot').filter(j => yearOf(j.created) === Y || (!j.created && yearOfTs(j._at) === Y));
     const plansDone = Store.all('plan').filter(p => p.ended && yearOf(p.endedAt) === Y);
-    return { months, todos: todos.length, events: ev.length, topCat, both: both.length, best, wishes, items: items.length, deps, jots: jots.length, plansDone: plansDone.length };
+    const dodo = Store.all('dodo').filter(x => x.done && yearOf(x.doneAt) === Y).length;
+    const trips = Store.all('trip').filter(x => yearOf(x.start) === Y).length;
+    return { dodo, trips, months, todos: todos.length, events: ev.length, topCat, both: both.length, best, wishes, items: items.length, deps, jots: jots.length, plansDone: plansDone.length };
   }
   function pageYear() {
     const ty = D.ymd(D.today())[0];
@@ -212,7 +235,7 @@
     const years = []; for (let y = ty; y >= minY; y--) years.push(y);
     h += '<div class="chips" style="margin-bottom:16px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px">' + years.map(y => '<button class="chip' + (y === Y ? ' on' : '') + '" data-act="year-pick" data-k="' + y + '" style="flex:none">' + y + ' 年</button>').join('') + '</div>';
     const st = yearStats(Y);
-    const total = st.todos + st.events + st.both + st.wishes.length + st.items + st.jots + st.plansDone + (st.deps ? 1 : 0);
+    const total = st.dodo + st.trips + st.todos + st.events + st.both + st.wishes.length + st.items + st.jots + st.plansDone + (st.deps ? 1 : 0);
     if (!total) return h + A.emptyHTML('spark', '還沒有甚麼可以說。', '記下待辦事項、日子和計劃：到十二月，這裏自己就滿了。');
     if (D.valid(s.together) && yearOf(s.together) <= Y) {
       const n = Y - yearOf(s.together) + 1;
@@ -224,6 +247,8 @@
     if (st.todos) tiles.push(tile(st.todos, '一起完成的待辦', 'todo'));
     if (st.both) tiles.push(tile(st.both, '兩個人都答了的問題', 'help'));
     if (st.best > 1) tiles.push(tile(st.best + ' 天', '最長一起回答的連續', 'flame'));
+    if (st.trips) tiles.push(tile(st.trips, '一起去的旅行', 'flag'));
+    if (st.dodo) tiles.push(tile(st.dodo, '一起做了的事', 'coffee'));
     if (st.wishes.length) tiles.push(tile(st.wishes.length, '實現了的願望', 'star'));
     if (st.items) tiles.push(tile(st.items, '清單上劃掉的', 'list'));
     if (st.deps) tiles.push(tile(money(st.deps), '一起存下的錢', 'card'));
@@ -249,7 +274,7 @@
     const on = A.on, out = [];
     if (on('know')) {
       const n = Store.all('know').filter(x => x.who === A.OT()).length;
-      out.push(['#/know', 'note', '要知道的事', n ? A.nm(A.OT()) + ' 填了 ' + n + ' 項' : '尺碼、喜歡的、不喜歡的']);
+      out.push(['#/know', 'note', '要知道的事', n ? '關於 ' + A.nm(A.OT()) + '：' + n + ' 項' : '尺碼、喜歡的、不喜歡的']);
     }
     if (on('plans')) {
       const ps = Store.all('plan').filter(p => !p.ended);
@@ -259,6 +284,13 @@
       const n = Store.all('jot').length;
       out.push(['#/jots', 'pencil', '筆記', n ? n + ' 則' : '本子還是空的']);
     }
+    if (on('dolist')) { const n = Store.all('dodo').filter(x => !x.done).length; out.push(['#/dolist', 'coffee', '一起做', n ? n + ' 件想一起做的' : '電影、旅行、想去的地方']); }
+    if (on('trips')) {
+      const t = D.today(), up = Store.all('trip').filter(x => (x.end || x.start) >= t).sort((a, b) => a.start < b.start ? -1 : 1)[0];
+      out.push(['#/trips', 'flag', '旅行清單', up ? up.name + (up.start > t ? ' · ' + D.diff(t, up.start) + ' 天後' : ' · 旅行中') : '每次旅行一張清單']);
+    }
+    if (on('capsule')) { const n = Store.all('capsule').filter(c => c.openOn > D.today()).length; out.push(['#/capsule', 'hourglass', '時間囊', n ? n + ' 封還未到時候' : '寫一封未來才打開的信']); }
+    if (on('vault')) out.push(['#/vault', 'lock', '保險箱', '要密碼才打開']);
     if (on('year')) out.push(['#/year', 'spark', '我們的一年', D.ymd(D.today())[0] + ' 年回顧']);
     return out;
   };
@@ -266,7 +298,7 @@
   Object.assign(A.pages, { know: pageKnow, plans: pagePlans, jots: pageJots, year: pageYear });
   Object.assign(A.acts, {
     'know-who'(el) { ui.knowWho = el.dataset.k; A.render(); },
-    'know-new'() { knowSheet(); },
+    'know-new'() { knowPick(); },
     'know-edit'(el) { knowSheet(el.dataset.id); },
     'plan-tab'(el) { ui.planTab = el.dataset.k; A.render(); },
     'plan-new'() { planSheet(); },
