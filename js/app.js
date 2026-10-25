@@ -6,8 +6,24 @@
 
   /* ================= 設定與身分 ================= */
   const SECTION_DEF = { question: false, dolist: true, trips: true, capsule: true, vault: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
+  /* 設定逐項存成獨立的資料（cfg_xxx），每一項各自同步，互不覆蓋。
+     舊版本的 'settings' 仍然讀取，作為底稿。 */
+  const CFG_KEYS = ['names.a', 'names.b', 'together', 'birthday.a', 'birthday.b', 'sections', 'periodLen', 'listCats', 'wishCats', 'periodShare', 'periodWho', 'male', 'doCats', 'currency'];
+  const cfgId = k => 'cfg_' + k.replace('.', '_');
+  let sCache = null, sRev = -1;
   function S() {
-    const r = Store.get('settings') || {};
+    if (sCache && sRev === Store.rev) return sCache;
+    const r = JSON.parse(JSON.stringify(Store.get('settings') || {}));
+    r.names = Object.assign({}, r.names); r.birthday = Object.assign({}, r.birthday);
+    CFG_KEYS.forEach(k => {
+      const c = Store.get(cfgId(k)); if (!c) return;
+      const [a, b] = k.split('.');
+      if (b) r[a][b] = c.v; else r[a] = c.v;
+    });
+    sRev = Store.rev; sCache = buildS(r);
+    return sCache;
+  }
+  function buildS(r) {
     const extra = Object.assign({}, r); delete extra.id; delete extra._by; delete extra._at;
     return Object.assign(extra, {
       names: Object.assign({ a: '', b: '' }, r.names),
@@ -22,9 +38,15 @@
     });
   }
   function setS(patch) {
-    const cur = Store.get('settings') || {};
-    delete cur.id; delete cur._by; delete cur._at;
-    Store.put('settings', Object.assign(S(), cur, patch), 'settings');
+    const cur = S();
+    Object.keys(patch).forEach(key => {
+      const v = patch[key];
+      if (key === 'names' || key === 'birthday') {
+        ['a', 'b'].forEach(w => { if (v && w in v && (v[w] || '') !== (cur[key][w] || '')) Store.put('cfg', { v: v[w] || '' }, cfgId(key + '.' + w)); });
+      } else if (JSON.stringify(v) !== JSON.stringify(cur[key])) {
+        Store.put('cfg', { v }, cfgId(key));
+      }
+    });
   }
   const ME = () => Store.device.me || 'a';
   const OT = () => (ME() === 'a' ? 'b' : 'a');
@@ -33,7 +55,7 @@
   function initial(w) { return hasName(w) ? Array.from(nm(w).trim())[0].toUpperCase() : (w === ME() ? '我' : '+'); }
   // 男方藍、女方綠（在個人檔案可以改誰是男方）
   const sex = w => ((S().male || 'a') === w ? 'm' : 'f');
-  const WHO_COLOR = { m: '#3d7bff', f: '#22c99a', both: '#ff5d8f' };
+  const WHO_COLOR = { m: '#3d7bff', f: '#a7d6c4', both: '#ff5d8f' }; // 女方綠：Pantone Green 0921 U
   const colorOf = w => w === 'both' || !w ? WHO_COLOR.both : WHO_COLOR[sex(w)];
   const HEART = '<svg class="hrt" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.3-9.2C1.5 8.6 3.6 5.5 7 5.5c2 0 3.3 1.1 5 3 1.7-1.9 3-3 5-3 3.4 0 5.5 3.1 4.3 6.3C19.5 16.4 12 21 12 21z" fill="#ff5d8f"/></svg>';
   function avatarPhoto(w) { const r = Store.get('avatar_' + w); return r && r.photo ? r.photo : ''; }
@@ -981,29 +1003,43 @@
   /* ================= 歡迎 / 加入 ================= */
   function pageWelcome() {
     const join = pendingJoin();
+    const logo = ic => '<div class="logo-mark">' + icon(ic, 'lg') + '</div>';
     if (join) {
       const s = S();
-      let h = '<div class="welcome"><div class="logo-mark">' + icon(joinStage === 'pw' ? 'lock' : 'heart', 'lg') + '</div><h1>加入你們的空間</h1>';
+      let h = '<div class="welcome">' + logo(joinStage === 'pw' ? 'lock' : 'heart') + '<h1>加入你們的空間</h1>';
       if (joinStage === 'pw') return h + '<p class="lead">輸入你們的密碼。<br>不知道的話，問一問邀請你的人。</p>' +
         '<div class="glass card"><form data-form="join-pw"><input class="field" id="joinPw" type="password" autocomplete="current-password" placeholder="密碼" autofocus>' +
         '<button class="btn block" type="submit" style="margin-top:14px" id="joinPwBtn">加入</button></form></div>' +
         '<button class="btn ghost block" data-act="join-cancel">取消</button></div>';
-      if (joinStage === 'loading') return h + '<p class="lead">正在讀取資料…</p></div>';
+      if (joinStage === 'loading') return h + '<p class="lead">正在從試算表讀取你們的資料…</p></div>';
       if (joinStage === 'err') return h + '<p class="lead">讀取失敗：' + esc(Sync.msg) + '</p><button class="btn block" data-act="join-retry">再試一次</button><button class="btn ghost block" style="margin-top:10px" data-act="join-cancel">取消</button></div>';
-      h += '<p class="lead">你是哪一位？</p><div class="stack">';
+      if (joinStage === 'setup') return '<div class="welcome">' + logo('heart') + '<h1>新的空間</h1><p class="lead">試算表還是空的，先填你們的名字。<br>填好之後就會存到試算表。</p>' + nameForm() + '</div>';
+      h += '<p class="lead">找到你們的資料了。<br>這部裝置是誰的？</p><div class="stack">';
       ['a', 'b'].forEach(w => {
         const n = (s.names[w] || '').trim();
-        h += '<button class="glass card row" style="width:100%;text-align:left;gap:14px;margin:0" data-act="join-as" data-w="' + w + '"><div class="avatar ' + (w === 'b' ? 'b' : '') + ' sm">' + esc(n ? Array.from(n)[0] : '?') + '</div><span class="grow" style="font-weight:650;font-size:17px">' + (n ? '我是 ' + esc(n) : '我是另一位（還沒有名字）') + '</span>' + icon('chevR', 'sm') + '</button>';
+        h += '<button class="glass card row" style="width:100%;text-align:left;gap:14px;margin:0" data-act="join-as" data-w="' + w + '">' + avatar(w, 'sm') + '<span class="grow" style="font-weight:650;font-size:17px">' + (n ? '我是 ' + esc(n) : '我是另一位（還沒有名字）') + '</span>' + icon('chevR', 'sm') + '</button>';
       });
-      return h + '</div></div>';
+      return h + '</div><p class="small faint center" style="margin-top:14px">每人可以用多部裝置，不設上限。</p></div>';
     }
-    return '<div class="welcome"><div class="logo-mark">' + icon('heart', 'lg') + '</div><h1>我們</h1><p class="lead">只屬於你們兩個的小空間</p>' +
-      '<div class="glass card"><div class="label" style="margin-top:0">你的名字</div><input class="field" id="wMe" maxlength="30" placeholder="例如：Blue">' +
+    if (welcomeMode === 'local') {
+      return '<div class="welcome">' + logo('heart') + '<h1>我們</h1><p class="lead">先在這部手機開始，之後可以再連接試算表。</p>' + nameForm() +
+        '<button class="btn ghost block" data-act="welcome-mode" data-k="connect">' + icon('chevL', 'sm') + '返回，連接試算表</button></div>';
+    }
+    return '<div class="welcome">' + logo('cloud') + '<h1>我們</h1><p class="lead">只屬於你們兩個的小空間<br><span class="small">先連接你們的 Google 試算表。已經有資料的話，會自動接回來。</span></p>' +
+      '<div class="glass card"><form data-form="welcome-connect">' +
+      '<div class="label" style="margin-top:0">網頁應用程式網址</div><input class="field" id="wcUrl" inputmode="url" autocomplete="url" placeholder="https://script.google.com/macros/s/…/exec">' +
+      '<div class="label">密碼</div><input class="field" id="wcKey" type="password" autocomplete="current-password" placeholder="你們的密碼">' +
+      '<button class="btn block" type="submit" style="margin-top:18px" id="wcBtn">' + icon('cloud', 'sm') + '連接</button></form></div>' +
+      '<button class="btn ghost block" data-act="welcome-join">' + icon('link', 'sm') + '我收到了邀請連結</button>' +
+      '<button class="link-btn small" style="display:block;margin:16px auto 0" data-act="welcome-mode" data-k="local">還沒有試算表？先在這部手機開始</button></div>';
+  }
+  function nameForm() {
+    return '<div class="glass card"><div class="label" style="margin-top:0">你的名字</div><input class="field" id="wMe" maxlength="30" placeholder="例如：Blue">' +
       '<div class="label">另一半的名字（可以之後再填）</div><input class="field" id="wOther" maxlength="30" placeholder="例如：Sky">' +
       '<div class="label">你是</div><div class="seg" id="wSex"><button type="button" data-k="m" class="on">男方</button><button type="button" data-k="f">女方</button></div>' +
-      '<button class="btn block" style="margin-top:20px" data-act="welcome-start">開始</button></div>' +
-      '<button class="btn ghost block" data-act="welcome-join">' + icon('link', 'sm') + '我收到了邀請連結</button></div>';
+      '<button class="btn block" style="margin-top:20px" data-act="welcome-start">開始</button></div>';
   }
+  let welcomeMode = 'connect';
   function pendingJoin() { try { return JSON.parse(sessionStorage.getItem('us.join') || 'null'); } catch (e) { return null; } }
   function decodeJoin(code) {
     try {
@@ -1015,45 +1051,45 @@
   }
   // 邀請連結只帶網址，不帶密碼
   function encodeJoin(u) { return btoa(unescape(encodeURIComponent(JSON.stringify({ u })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
-  let joinStage = 'pw'; // pw | loading | err | pick
+  let joinStage = 'pw'; // pw | loading | err | pick | setup
   function startJoin(j) {
     sessionStorage.setItem('us.join', JSON.stringify({ u: j.u }));
     joinStage = 'pw';
     if (location.hash !== '#/welcome') location.hash = '#/welcome'; else render();
   }
+  // 用網址 + 密碼連接；以試算表那份作準
+  async function connectWith(url, pw, btn, label) {
+    if (btn) { btn.disabled = true; btn.textContent = '檢查中…'; }
+    try { await Sync.test(url, pw); }
+    catch (e) { if (btn) { btn.disabled = false; btn.innerHTML = label; } toast(e.message || '連接失敗'); return false; }
+    sessionStorage.setItem('us.join', JSON.stringify({ u: url }));
+    if (Store.device.me) {
+      // 已經用緊這部裝置的人，只是重新連接
+      try { await Sync.connect(url, pw); } catch (e) { toast(e.message); return false; }
+      sessionStorage.removeItem('us.join');
+      location.hash = '#/home'; Sync.startPolling(); toast('已連接，資料以試算表為準', 'cloud');
+      return true;
+    }
+    pendingKey = pw;
+    await loadJoin();
+    return true;
+  }
+  let pendingKey = '';
   async function submitJoinPw() {
     const j = pendingJoin(); if (!j) return;
-    const inp = document.getElementById('joinPw'), btn = document.getElementById('joinPwBtn');
-    const pw = inp.value;
-    if (!pw) { inp.focus(); return; }
-    btn.disabled = true; btn.textContent = '檢查中…';
-    try {
-      await Sync.test(j.u, pw);
-    } catch (e) {
-      btn.disabled = false; btn.textContent = '加入';
-      inp.value = ''; inp.focus();
-      toast(e.message || '連接失敗');
-      return;
-    }
-    const d = Store.device;
-    if (d.me) {
-      // 已經用緊這部手機的人，只是更新連接
-      const changed = d.url !== j.u;
-      if (changed) Object.keys(Store.s.records).forEach(id => Store.s.pending[id] = 1);
-      Store.setDevice({ url: j.u, key: pw, cursor: changed ? 0 : d.cursor, lastError: '' });
-      sessionStorage.removeItem('us.join');
-      location.hash = '#/home';
-      Sync.startPolling();
-      toast('已連接雲端同步', 'cloud');
-      return;
-    }
-    Store.setDevice({ url: j.u, key: pw, cursor: 0, lastError: '' });
-    await loadJoin();
+    const inp = document.getElementById('joinPw');
+    if (!inp.value) { inp.focus(); return; }
+    const ok = await connectWith(j.u, inp.value, document.getElementById('joinPwBtn'), '加入');
+    if (!ok && document.getElementById('joinPw')) { document.getElementById('joinPw').value = ''; document.getElementById('joinPw').focus(); }
   }
   async function loadJoin() {
-    joinStage = 'loading'; render();
-    await Sync.run(true);
-    joinStage = Sync.state === 'err' ? 'err' : 'pick';
+    const j = pendingJoin(); if (!j) return;
+    joinStage = 'loading'; if (location.hash !== '#/welcome') location.hash = '#/welcome'; render();
+    try {
+      const res = await Sync.connect(j.u, pendingKey || Store.device.key);
+      const s = S();
+      joinStage = res.hasSettings && (s.names.a || s.names.b) ? 'pick' : 'setup';
+    } catch (e) { joinStage = 'err'; }
     render();
   }
 
@@ -1245,6 +1281,7 @@
     let r = route();
     if (!Store.device.me && r.name !== 'welcome') { location.replace('#/welcome'); return; }
     if (Store.device.me && r.name === 'welcome' && !pendingJoin()) { location.replace('#/home'); return; }
+    if (App.dragging) { deferred = true; return; } // 拖曳中不要重畫
     const ae = document.activeElement;
     const same = lastRoute === location.hash;
     const live = ae && ae.hasAttribute && ae.hasAttribute('data-live');
@@ -1428,11 +1465,9 @@
       try { await Sync.test(u, k); } catch (e) { toast(e.message); return; }
       const changed = u !== Store.device.url || k !== Store.device.key;
       if (changed) {
-        // 新的雲端：把本機所有資料推上去
-        Object.keys(Store.s.records).forEach(id => Store.s.pending[id] = 1);
-        Store.setDevice({ url: u, key: k, cursor: 0 });
-      } else Store.setDevice({ key: k });
-      await Sync.run(true);
+        // 連接試算表：以試算表那份作準，空白設定不會覆蓋雲端
+        try { await Sync.connect(u, k); } catch (e) { toast(e.message); return; }
+      } else { Store.setDevice({ key: k }); await Sync.run(true); }
       toast(Sync.state === 'ok' ? '已連接，開始同步' : '同步失敗：' + Sync.msg, 'cloud');
       Sync.startPolling();
       render();
@@ -1466,6 +1501,7 @@
       const sx = (document.querySelector('#wSex .on') || {}).dataset;
       Store.setDevice({ me: 'a' });
       setS({ names: { a, b }, male: sx && sx.k === 'f' ? 'b' : 'a' });
+      if (pendingJoin()) { sessionStorage.removeItem('us.join'); Sync.startPolling(); }
       location.hash = '#/home';
       toast('歡迎，' + a, 'heart');
     },
@@ -1497,6 +1533,7 @@
       });
     },
     'join-retry'() { loadJoin(); },
+    'welcome-mode'(el) { welcomeMode = el.dataset.k; render(); },
     'join-cancel'() { sessionStorage.removeItem('us.join'); if (!Store.device.me) Store.setDevice({ url: '', key: '' }); location.hash = Store.device.me ? '#/home' : '#/welcome'; render(); }
   };
 
@@ -1511,6 +1548,14 @@
   });
   document.addEventListener('submit', e => {
     if (e.target.closest('[data-form="join-pw"]')) { e.preventDefault(); submitJoinPw(); return; }
+    if (e.target.closest('[data-form="welcome-connect"]')) {
+      e.preventDefault();
+      const u = document.getElementById('wcUrl').value.trim(), k = document.getElementById('wcKey').value;
+      if (!u) { document.getElementById('wcUrl').focus(); return; }
+      if (!k) { document.getElementById('wcKey').focus(); return; }
+      connectWith(u, k, document.getElementById('wcBtn'), icon('cloud', 'sm') + '連接');
+      return;
+    }
     const g = e.target.closest('[data-form]');
     if (g && App.forms && App.forms[g.dataset.form]) { e.preventDefault(); App.forms[g.dataset.form](g); return; }
     const f = e.target.closest('[data-form="item-add"]');

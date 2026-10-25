@@ -153,14 +153,16 @@
       if (onDelete) api.$('[data-del]').onclick = () => { onDelete(); api.close(); };
     });
   }
+  const DRAG_ICON = '<svg class="i" viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
   function pageTripTpl() {
     const items = tplItems();
     let h = A.head('清單範本', '新的旅行會用這張清單。改了不會影響已經建立的旅行。', { back: true });
-    h += '<div class="glass card tight">' + items.map((it, i) =>
-      '<div class="tpl-row"><button class="mv" data-act="tpl-move" data-i="' + i + '" data-d="-1"' + (i === 0 ? ' disabled' : '') + ' aria-label="上移">' + icon('chevD', 'xs').replace('class="i', 'style="transform:rotate(180deg)" class="i') + '</button>' +
-      '<button class="mv" data-act="tpl-move" data-i="' + i + '" data-d="1"' + (i === items.length - 1 ? ' disabled' : '') + ' aria-label="下移">' + icon('chevD', 'xs') + '</button>' +
+    h += '<p class="small faint" style="margin:-6px 4px 12px">按住右邊的 ≡ 上下拖，就可以改次序；按項目可以修改。</p>';
+    h += '<div class="glass card tight" data-sortable="tpl">' + items.map((it, i) =>
+      '<div class="tpl-row" data-id="' + esc(it.id) + '">' +
+      '<button class="faint" data-act="tpl-del" data-i="' + i + '" aria-label="刪除" style="padding:4px">' + icon('x', 'sm') + '</button>' +
       '<button class="t" data-act="tpl-edit" data-i="' + i + '">' + esc(it.t) + '</button>' +
-      '<button class="faint" data-act="tpl-del" data-i="' + i + '" aria-label="刪除" style="padding:4px">' + icon('x', 'sm') + '</button></div>').join('') + '</div>';
+      '<span class="drag-handle" aria-label="拖曳排序">' + DRAG_ICON + '</span></div>').join('') + '</div>';
     h += '<div class="glass card" style="padding:8px 8px 8px 16px"><form class="row" data-form="tpl-add"><input class="field grow" data-live name="t" placeholder="加一項到範本…" maxlength="120" style="background:transparent;border:0;box-shadow:none;padding:10px 0"><button class="btn sm" type="submit" style="padding:0 14px" aria-label="加">' + icon('plus', 'sm') + '</button></form></div>';
     h += '<button class="btn ghost block" data-act="tpl-reset">' + icon('undo', 'sm') + '還原預設清單</button>';
     return h;
@@ -361,6 +363,55 @@
   });
   // 新加的項目放在「如適用」之前，如適用的永遠排最後
   const optional = t => /如適用/.test(t);
+  /* ---------- 拖曳排序（按住 ≡ 上下拖） ---------- */
+  const SORTERS = {
+    tpl(ids) { const map = {}; tplItems().forEach(i => map[i.id] = i); saveTpl(ids.map(id => map[id]).filter(Boolean)); }
+  };
+  let drag = null;
+  document.addEventListener('pointerdown', e => {
+    const hd = e.target.closest('.drag-handle'); if (!hd) return;
+    const row = hd.closest('[data-id]'), list = row && row.parentNode;
+    if (!list || !list.dataset.sortable) return;
+    e.preventDefault();
+    const r = row.getBoundingClientRect();
+    drag = { row, list, off: e.clientY - r.top, y: e.clientY, before: Array.from(list.children).map(x => x.dataset.id).join('|'), id: e.pointerId };
+    A.dragging = true;
+    row.classList.add('dragging');
+    try { hd.setPointerCapture(e.pointerId); } catch (err) {}
+    drag.timer = setInterval(() => { // 拖到畫面邊緣自動捲動
+      if (!drag) return;
+      const edge = 90;
+      if (drag.y < edge) window.scrollBy(0, -10); else if (drag.y > innerHeight - edge - 70) window.scrollBy(0, 10);
+      place();
+    }, 16);
+  });
+  function place() {
+    const { row, list, y, off } = drag;
+    let moved = true;
+    while (moved) {
+      moved = false;
+      const prev = row.previousElementSibling, next = row.nextElementSibling;
+      if (prev && y < prev.getBoundingClientRect().top + prev.offsetHeight / 2) { list.insertBefore(row, prev); moved = true; }
+      else if (next && y > next.getBoundingClientRect().top + next.offsetHeight / 2) { list.insertBefore(next, row); moved = true; }
+    }
+    row.style.transform = '';
+    const natural = row.getBoundingClientRect().top;
+    row.style.transform = 'translateY(' + (y - off - natural) + 'px)';
+  }
+  document.addEventListener('pointermove', e => { if (!drag || e.pointerId !== drag.id) return; e.preventDefault(); drag.y = e.clientY; place(); }, { passive: false });
+  function endDrag() {
+    if (!drag) return;
+    const { row, list, before, timer } = drag;
+    clearInterval(timer);
+    row.style.transform = ''; row.classList.remove('dragging');
+    const ids = Array.from(list.children).map(x => x.dataset.id);
+    drag = null; A.dragging = false;
+    if (ids.join('|') !== before && SORTERS[list.dataset.sortable]) SORTERS[list.dataset.sortable](ids);
+    else A.render();
+  }
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
+
   A.forms['tci-add'] = f => {
     const inp = f.querySelector('input'), t = inp.value.trim(); if (!t) return;
     const its = tripItems(f.dataset.id);

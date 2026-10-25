@@ -21,11 +21,14 @@
     const cycle = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : 28;
     const last = recs[recs.length - 1] || null;
     const next = last ? D.add(last.start, cycle) : null;
-    const owner = s.periodOwner || (recs[0] && recs[0]._by) || '';
+    const female = (s.male || 'a') === 'a' ? 'b' : 'a';
+    const owner = s.periodWho || female; // 預設：女方（第二位），可以在經期設定改
     const share = s.periodShare || 'all';
     return { recs, len, cycle, last, next, owner, share, avgReal: recent.length > 0 };
   }
   const isOwner = I => !I.owner || I.owner === A.ME();
+  // 兩個人都可以記錄和修改（除非她選了不分享）；私人筆記只有本人看到
+  const canEdit = I => isOwner(I) || I.share === 'all';
   function canSee(level, I) {
     I = I || info();
     if (isOwner(I)) return true;
@@ -72,15 +75,15 @@
   const ui = { y: null, m: null };
   function page() {
     const I = info(), t = D.today(), me = A.ME();
-    const own = isOwner(I);
+    const own = isOwner(I), edit = canEdit(I);
     const ownerName = A.nm(I.owner || me);
-    let h = A.head('經期', own ? '你的日子，和接下來的事。' : esc(ownerName) + ' 的日子，和接下來的事。', { back: true, right: own ? '<button class="round-btn" data-act="p-settings" aria-label="設定">' + icon('sliders', 'sm') + '</button>' : '' });
+    let h = A.head('經期', own ? '你的日子，和接下來的事。' : esc(ownerName) + ' 的日子，和接下來的事。', { back: true, right: edit ? '<button class="round-btn" data-act="p-settings" aria-label="設定">' + icon('sliders', 'sm') + '</button>' : '' });
     if (!canSee('dates', I)) {
       return h + '<div class="empty"><div class="bubble glass">' + icon('lock', 'lg') + '</div><h3>' + esc(ownerName) + ' 沒有分享</h3><p>對方可以在經期設定裏改。</p></div>';
     }
     if (!I.last) {
       h += '<div class="glass card hero" style="padding:24px"><div class="q-title" style="margin-top:0">' + (own ? '你還沒記下甚麼。' : '還沒有記錄。') + '</div><div class="muted">' + (own ? '標記經期開始的那天，其餘的會自己排好。' : esc(ownerName) + ' 記錄之後，這裏就會出現。') + '</div>' +
-        (own ? '<div class="hero-actions"><button class="btn sm" data-act="p-start-today">經期今天開始了</button><button class="btn ghost sm" data-act="p-add">選另一天</button></div>' : '') + '</div>';
+        (edit ? '<div class="hero-actions"><button class="btn sm" data-act="p-start-today">經期今天開始了</button><button class="btn ghost sm" data-act="p-add">選另一天</button></div>' : '') + '</div>';
       return h + calendarCard(I);
     }
     const map = dayMap(t, t, I);
@@ -102,14 +105,14 @@
         '<div class="row" style="gap:16px;margin-top:10px;align-items:flex-start">' +
         '<div class="pcircle" style="background:linear-gradient(145deg,' + ph.c1 + ',' + ph.c2 + ')"><b>' + x.cday + '</b><span>天</span></div>' +
         '<div class="grow"><div style="font-size:22px;font-weight:750">' + title + '</div><div class="muted small" style="margin-top:4px">' + desc + '</div>' +
-        (own ? '<button class="link-btn small" style="margin-top:8px;color:#c0367f" data-act="p-mood" data-k="' + t + '">' + (lg ? '改今天的感覺' : '記下我的感覺') + icon('chevR', 'xs') + '</button>' : '') + '</div></div>' +
+        (edit ? '<button class="link-btn small" style="margin-top:8px;color:#c0367f" data-act="p-mood" data-k="' + t + '">' + (lg ? '改今天的感覺' : own ? '記下我的感覺' : '幫 ' + esc(ownerName) + ' 記下感覺') + icon('chevR', 'xs') + '</button>' : '') + '</div></div>' +
         phaseBar(x) +
         (lg && canSee('all', I) ? '<div style="margin-top:12px">' + logChips(lg, own) + '</div>' : '') +
         '<hr style="border:0;height:1px;background:var(--line);margin:16px 0 8px">' +
         '<div class="set-row"><span class="muted">下次經期</span><b>' + (daysToNext > 0 ? daysToNext + ' 天後' : '今天') + '</b></div>' +
         '<div class="set-row"><span class="muted">大約</span><span>' + D.md(x.nx) + ' 週' + D.WD[D.dow(x.nx)] + '</span></div>' +
         '<div class="set-row"><span class="muted">平均週期</span><span>' + I.cycle + ' 天' + (I.avgReal ? '' : '（預設）') + '</span></div>' +
-        (own ? '<div class="hero-actions">' + (inOpen ? '<button class="btn sm" data-act="p-end-today" data-id="' + curRec.id + '">經期結束了</button>' : x.phase === 'men' && x.c.rec ? '' : '<button class="btn sm" data-act="p-start-today">經期今天開始了</button>') + '<button class="btn ghost sm" data-act="p-add">記錄另一天</button></div>' : '') +
+        (edit ? '<div class="hero-actions">' + (inOpen ? '<button class="btn sm" data-act="p-end-today" data-id="' + curRec.id + '">經期結束了</button>' : x.phase === 'men' && x.c.rec ? '' : '<button class="btn sm" data-act="p-start-today">經期今天開始了</button>') + '<button class="btn ghost sm" data-act="p-add">記錄另一天</button></div>' : '') +
         '</div>';
     }
     h += '<div class="hint-bar">這是根據以前的週期推算的。不能用作避孕方法。</div>';
@@ -118,8 +121,8 @@
       const prev = arr[i + 1];
       const len = r.end ? D.diff(r.start, r.end) + 1 : null;
       const s = [len ? len + ' 天' : '沒有記錄結束', prev ? '週期 ' + D.diff(prev.start, r.start) + ' 天' : ''].filter(Boolean).join(' · ');
-      return own ? A.row({ act: 'p-edit', id: r.id, t: D.ymdText(r.start), s }) : A.row({ t: D.ymdText(r.start), s, noChev: true });
-    }).join('') + '</div>';
+      return edit ? A.row({ act: 'p-edit', id: r.id, t: D.ymdText(r.start) + (r.end ? ' – ' + D.md(r.end) : ''), s }) : A.row({ t: D.ymdText(r.start), s, noChev: true });
+    }).join('') + '</div>' + (edit ? '<p class="small faint" style="margin:-4px 4px 14px">輸入錯了？按記錄就可以改開始和結束的日子，或者刪除。</p>' : '');
     return h;
   }
   function phaseBar(x) {
@@ -175,7 +178,7 @@
   }
 
   /* ---------- 彈出窗 ---------- */
-  function ensureOwner() { if (!A.S().periodOwner) A.setS({ periodOwner: A.ME() }); }
+  function ensureOwner() { /* 誰的記錄由設定決定，預設女方 */ }
   function recordSheet(id, preset) {
     const x = id ? Store.get(id) : Object.assign({ start: D.today(), end: '' }, preset);
     openSheet('<h2>' + (id ? '這次經期' : '記錄一次經期') + '</h2><div class="label">開始</div><input type="date" class="field" name="start" value="' + esc(x.start) + '"><div class="label">結束（可選，還沒結束就留空）</div><input type="date" class="field" name="end" value="' + esc(x.end || '') + '">' +
@@ -197,7 +200,7 @@
       '<div class="label">流量</div><div class="seg" data-flow>' + FLOW.map(([k, n]) => '<button type="button" data-k="' + k + '" class="' + (x.flow === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
       '<div class="label">身體</div>' + chips(SYM, x.sym || [], 'sym') +
       '<div class="label">心情</div>' + chips(MOOD, x.mood || [], 'mood') +
-      '<div class="label">' + icon('lock', 'xs') + ' 筆記（只有你看到）</div><textarea class="field" name="note" maxlength="500" style="min-height:80px" placeholder="今天怎樣？">' + esc(x.note || '') + '</textarea>' +
+      (isOwner(info()) ? '<div class="label">' + icon('lock', 'xs') + ' 筆記（只有你看到）</div><textarea class="field" name="note" maxlength="500" style="min-height:80px" placeholder="今天怎樣？">' + esc(x.note || '') + '</textarea>' : '') +
       '<div class="actions">' + (log(day) ? '<button class="btn ghost" data-del style="flex:0 0 auto;width:50px;padding:0;color:var(--danger)">' + icon('trash', 'sm') + '</button>' : '') + '<button class="btn" data-save>儲存</button></div>', api => {
       let flow = x.flow || '';
       api.$('[data-flow]').onclick = e => { const b = e.target.closest('button'); if (!b) return; flow = b.dataset.k; api.$$('[data-flow] button').forEach(z => z.classList.toggle('on', z === b)); };
@@ -205,7 +208,8 @@
       const pick = n => api.$$('[data-multi="' + n + '"] .chip.on').map(b => b.dataset.v);
       api.$('[data-save]').onclick = () => {
         ensureOwner();
-        Store.put('pday', { date: day, flow, sym: pick('sym'), mood: pick('mood'), note: api.$('[name=note]').value.trim() }, 'pd_' + day);
+        const nt = api.$('[name=note]');
+        Store.put('pday', { date: day, flow, sym: pick('sym'), mood: pick('mood'), note: nt ? nt.value.trim() : (x.note || '') }, 'pd_' + day);
         api.close(); toast('已記下', 'check');
       };
       const del = api.$('[data-del]');
@@ -213,7 +217,7 @@
     });
   }
   function daySheet(day) {
-    const I = info(), own = isOwner(I);
+    const I = info(), own = isOwner(I), edit = canEdit(I);
     const z = dayMap(day, day, I)[day];
     const rec = I.recs.find(r => { const e = r.end || D.add(r.start, I.len - 1); return day >= r.start && day <= e; });
     let label = '沒有推算';
@@ -221,7 +225,7 @@
     const lg = log(day);
     openSheet('<h2>' + D.full(day) + '</h2><p class="muted" style="margin-top:-8px">' + label + '</p>' +
       (lg && canSee('all', I) ? logChips(lg, own) : '') +
-      (own ? '<div class="stack" style="margin-top:16px"><button class="btn block" data-mood>' + icon('heart', 'sm') + (lg ? '改這天的感覺' : '記下這天的感覺') + '</button>' +
+      (edit ? '<div class="stack" style="margin-top:16px"><button class="btn block" data-mood>' + icon('heart', 'sm') + (lg ? '改這天的感覺' : '記下這天的感覺') + '</button>' +
         (rec ? '<button class="btn ghost block" data-edit>' + icon('pencil', 'sm') + '編輯這次經期</button>' : (day <= D.today() ? '<button class="btn ghost block" data-start>' + icon('drop', 'sm') + '這天經期開始</button>' : '')) + '</div>' : ''), api => {
       const b1 = api.$('[data-mood]'); if (b1) b1.onclick = () => { api.close(); moodSheet(day); };
       const b2 = api.$('[data-edit]'); if (b2) b2.onclick = () => { api.close(); recordSheet(rec.id); };
@@ -230,15 +234,15 @@
   }
   function settingsSheet() {
     const I = info(), s = A.S(), me = A.ME(), ot = A.OT();
-    const owner = I.owner || me;
+    const owner = I.owner;
     const shares = [['none', 'lock', '甚麼都看不到'], ['dates', 'heart', '經期的日子，和下次甚麼時候來'], ['all', 'userPlus', '連症狀和心情也看到']];
     openSheet('<h2>經期設定</h2>' +
-      '<div class="label">這是誰的記錄</div><div class="seg" data-owner>' + [me, ot].map(w => '<button type="button" data-k="' + w + '" class="' + (owner === w ? 'on' : '') + '">' + esc(A.nm(w)) + '</button>').join('') + '</div>' +
+      '<div class="label">來月經的是（預設女方）</div><div class="seg" data-owner>' + [me, ot].map(w => '<button type="button" data-k="' + w + '" class="' + (owner === w ? 'on' : '') + '">' + esc(A.nm(w)) + '</button>').join('') + '</div>' +
       '<div class="label">你的另一半看到甚麼</div><div data-share>' + shares.map(([k, ic, n]) => '<button type="button" class="opt" data-k="' + k + '">' + icon(ic, 'sm') + '<span>' + n + '</span><span class="ck">' + (I.share === k ? icon('check') : '') + '</span></button>').join('') + '</div>' +
       '<p class="small faint" style="margin:4px 4px 0">當天的筆記，在任何情況下都不會分享。</p>' +
       '<div class="set-row" style="margin-top:12px"><div><div style="font-weight:600">經期長度</div><div class="small muted">沒有記錄結束日時用這個</div></div><div class="row" style="gap:6px"><button class="round-btn" style="width:36px;height:36px" data-len="-1">−</button><b style="width:28px;text-align:center" data-lenv>' + I.len + '</b><button class="round-btn" style="width:36px;height:36px" data-len="1">+</button></div></div>' +
       '<div class="actions"><button class="btn" data-x>完成</button></div>', api => {
-      api.$('[data-owner]').onclick = e => { const b = e.target.closest('button'); if (!b) return; api.$$('[data-owner] button').forEach(z => z.classList.toggle('on', z === b)); A.setS({ periodOwner: b.dataset.k }); };
+      api.$('[data-owner]').onclick = e => { const b = e.target.closest('button'); if (!b) return; api.$$('[data-owner] button').forEach(z => z.classList.toggle('on', z === b)); A.setS({ periodWho: b.dataset.k }); toast('經期記錄是 ' + A.nm(b.dataset.k) + ' 的', 'check'); };
       api.$('[data-share]').onclick = e => { const b = e.target.closest('.opt'); if (!b) return; api.$$('[data-share] .ck').forEach(c => c.innerHTML = ''); b.querySelector('.ck').innerHTML = icon('check'); A.setS({ periodShare: b.dataset.k }); };
       api.$$('[data-len]').forEach(b => b.onclick = () => { const v = Math.max(2, Math.min(10, (A.S().periodLen || 5) + Number(b.dataset.len))); A.setS({ periodLen: v }); api.$('[data-lenv]').textContent = v; });
       api.$('[data-x]').onclick = () => api.close();
@@ -249,7 +253,7 @@
   function homeText() {
     const I = info();
     if (!canSee('dates', I)) return null;
-    if (!I.last) return isOwner(I) ? '記錄第一次' : '還沒有記錄';
+    if (!I.last) return canEdit(I) ? '記錄第一次' : '還沒有記錄';
     const t = D.today(), z = dayMap(t, t, I)[t];
     if (!z) return '';
     if (z.phase === 'men') { if (z.c.rec) return '經期第 ' + z.cday + ' 天'; const late = D.diff(z.c.start, t); return late === 0 ? '可能今天開始' : '遲了 ' + late + ' 天'; }

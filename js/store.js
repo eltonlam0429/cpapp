@@ -11,6 +11,7 @@
 
   const Store = {
     s: null,
+    rev: 0, // 每次資料有變就加一，給設定快取用
     uid,
 
     load() {
@@ -93,6 +94,7 @@
     },
 
     touch(id) {
+      this.rev++;
       this.s.pending[id] = 1;
       this.save();
       emit();
@@ -128,13 +130,14 @@
           n++;
         }
       });
-      this.save(); emit(); Sync.schedule();
+      this.rev++; this.save(); emit(); Sync.schedule();
       return n;
     },
 
     wipe() {
       localStorage.removeItem(LS_KEY);
       this.load();
+      this.rev++;
       emit();
     },
 
@@ -166,9 +169,51 @@
     startPolling() {
       clearInterval(this.pollT);
       this.pollT = setInterval(() => { if (document.visibilityState === 'visible') this.run(); }, 12000);
-      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.run(); });
-      window.addEventListener('online', () => this.run());
+      if (!this._listening) {
+        this._listening = true;
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') this.run(); });
+        window.addEventListener('online', () => this.run());
+      }
       this.run();
+    },
+
+    /* 連接一個試算表：永遠以試算表那份作準。
+       1) 先把雲端全部資料拉下來，同一筆資料一律用雲端的；
+       2) 如果雲端已經有設定（名字、生日、在一起的日子…），這部手機的設定全部丟掉，不會覆蓋雲端；
+       3) 其餘只在這部手機有的東西（例如待辦）才推上去。 */
+    async connect(url, key) {
+      const s = Store.s;
+      Object.assign(s.device, { url, key, cursor: 0, lastError: '' });
+      this.busy = true; this.setState('busy');
+      try {
+        const j = await this.request({ action: 'sync', since: 0, changes: [] }, url, key);
+        const rows = j.rows || [];
+        const cloud = new Set(rows.map(r => r.id));
+        const isCfg = id => id === 'settings' || /^cfg_/.test(id);
+        const cloudHasSettings = rows.some(r => isCfg(r.id) && !r.deleted);
+        rows.forEach(row => {
+          let data = {};
+          try { data = JSON.parse(row.json || '{}'); } catch (e) { return; }
+          s.records[row.id] = { id: row.id, col: row.col, data, updatedAt: row.updatedAt, deleted: row.deleted || 0, by: row.by || '' };
+          delete s.pending[row.id];
+        });
+        Object.keys(s.records).forEach(id => {
+          if (cloud.has(id)) return;
+          if (cloudHasSettings && isCfg(id)) { delete s.records[id]; delete s.pending[id]; return; }
+          s.pending[id] = 1;
+        });
+        s.device.cursor = j.cursor || 0;
+        s.device.lastSync = Date.now();
+        Store.rev++; Store.save(); emit();
+        this.busy = false;
+        await this.run(true);
+        return { rows: rows.length, hasSettings: cloudHasSettings };
+      } catch (e) {
+        this.busy = false;
+        s.device.lastError = e.message || String(e); Store.save();
+        this.setState('err', s.device.lastError);
+        throw e;
+      }
     },
 
     async request(payload, url, key) {
@@ -221,6 +266,7 @@
         s.device.lastSync = Date.now();
         s.device.lastError = '';
         Store.cleanup();
+        if (changed) Store.rev++;
         Store.save();
         if (changed) emit();
         this.setState('ok');
