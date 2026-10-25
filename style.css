@@ -625,3 +625,13 @@ details.hist summary::-webkit-details-marker { display: none; }
 .tpl-row.dragging { z-index: 5; box-shadow: 0 10px 30px rgba(var(--shadow-rgb), .22); border-radius: 14px; transition: none; }
 .tpl-row.dragging + .tpl-row { border-top-color: transparent; }
 [data-sortable] { overflow: visible; }
+
+/* v1.5：薄荷綠按鈕再淺一點 */
+:root[data-theme="mint"] { --btn-bg: #cae6dc; --btn-ink: #2c5c4e; --btn-shadow: rgba(120, 180, 158, .28); }
+
+/* v1.6：薄荷綠按鈕＝v1.4 的綠色再深一點；日曆「今天」跟按鈕顏色，不要反光 */
+:root[data-theme="mint"] { --btn-bg: #98ccb8; --btn-ink: #1b4a3d; --btn-shadow: rgba(100, 165, 140, .3); }
+.cal-day.today .num { background: var(--btn-bg); color: var(--btn-ink); box-shadow: none; }
+.cal-day.today.sel .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--btn-bg); }
+.months button.on { background: var(--btn-bg); color: var(--btn-ink); }
+.plegend .hrt { width: 11px; height: 11px; display: inline-block; }
