@@ -5,18 +5,21 @@
   const tabbar = document.getElementById('tabbar');
 
   /* ================= 設定與身分 ================= */
-  const SECTION_DEF = { question: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true };
+  const SECTION_DEF = { question: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
   function S() {
     const r = Store.get('settings') || {};
-    return {
+    const extra = Object.assign({}, r); delete extra.id; delete extra._by; delete extra._at;
+    return Object.assign(extra, {
       names: Object.assign({ a: '', b: '' }, r.names),
       together: r.together || '',
       birthday: Object.assign({ a: '', b: '' }, r.birthday),
       sections: Object.assign({}, SECTION_DEF, r.sections),
       periodLen: r.periodLen || 5,
       listCats: r.listCats || [],
-      wishCats: r.wishCats || []
-    };
+      wishCats: r.wishCats || [],
+      periodShare: r.periodShare || 'all',
+      periodOwner: r.periodOwner || ''
+    });
   }
   function setS(patch) {
     const cur = Store.get('settings') || {};
@@ -28,7 +31,10 @@
   function nm(w) { const n = (S().names[w] || '').trim(); return n || (w === ME() ? '我' : '另一半'); }
   function hasName(w) { return !!(S().names[w] || '').trim(); }
   function initial(w) { return hasName(w) ? Array.from(nm(w).trim())[0].toUpperCase() : (w === ME() ? '我' : '+'); }
+  function avatarPhoto(w) { const r = Store.get('avatar_' + w); return r && r.photo ? r.photo : ''; }
   function avatar(w, cls) {
+    const ph = avatarPhoto(w);
+    if (ph) return '<div class="avatar photo ' + (cls || '') + '"><img src="' + ph + '" alt=""></div>';
     const ghost = !hasName(w) && w !== ME();
     return '<div class="avatar ' + (w === 'b' ? 'b ' : '') + (ghost ? 'ghost ' : '') + (cls || '') + '">' + esc(initial(w)) + '</div>';
   }
@@ -37,6 +43,7 @@
     return Object.values(Store.s.records).some(r => r.by === o);
   }
   const on = k => S().sections[k] !== false;
+  Object.assign(App, { S, setS, ME, OT, nm, avatar, on, paired });
 
   /* ================= 今日問題 ================= */
   const Q_EPOCH = '2024-01-01';
@@ -64,6 +71,7 @@
 
   /* ================= 日曆標記（無上限，按需要計算） ================= */
   function catColor(cats, k) { const c = cats.find(x => x.k === k); return c ? c.c : '#2f6bff'; }
+  App.markers = (f, t) => markers(f, t);
   function yearlyBetween(dateKey, from, to) {
     if (!D.valid(dateKey)) return [];
     const [y0, m, d] = D.ymd(dateKey);
@@ -102,27 +110,6 @@
     if (rep === 'yearly') return yearlyBetween(start, D.add(from, -400), to).map(x => x.date);
     return out;
   }
-  function periodInfo() {
-    const recs = Store.all('period').filter(p => D.valid(p.start)).sort((a, b) => a.start < b.start ? -1 : 1);
-    const len = S().periodLen;
-    const starts = recs.map(r => r.start);
-    const gaps = [];
-    for (let i = 1; i < starts.length; i++) {
-      const g = D.diff(starts[i - 1], starts[i]);
-      if (g >= 18 && g <= 60) gaps.push(g);
-    }
-    const recent = gaps.slice(-6);
-    const cycle = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : 28;
-    const last = recs[recs.length - 1];
-    let next = null;
-    if (last) {
-      next = D.add(last.start, cycle);
-      const t = D.today();
-      // 如果已經過了很多，預計向前推（只是顯示用）
-      while (D.diff(next, t) > cycle + 10) next = D.add(next, cycle);
-    }
-    return { recs, cycle, len, last, next };
-  }
   function markers(from, to) {
     const out = [];
     const s = S();
@@ -132,7 +119,14 @@
         eventStarts(ev, D.add(from, -L), to).forEach(st => {
           for (let j = 0; j <= L; j++) {
             const d = D.add(st, j);
-            if (d >= from && d <= to) out.push({ date: d, title: ev.title, kind: 'event', id: ev.id, color: catColor(EVENT_CATS, ev.cat), sub: ev.allDay ? '全日' : (ev.time || ''), place: ev.place || '', multi: L > 0 ? (j + 1) + '/' + (L + 1) : '' });
+            if (d < from || d > to) continue;
+            let sub;
+            if (!L) sub = ev.allDay ? '全日' : (ev.time || '') + (ev.endTime ? '–' + ev.endTime : '');
+            else if (ev.allDay) sub = '全日';
+            else if (j === 0) sub = (ev.time || '') + ' 開始';
+            else if (j === L) sub = ev.endTime ? '至 ' + ev.endTime : '最後一天';
+            else sub = '全日';
+            out.push({ date: d, title: ev.title, kind: 'event', id: ev.id, color: catColor(EVENT_CATS, ev.cat), sub, place: ev.place || '', multi: L > 0 ? (j + 1) + '/' + (L + 1) : '' });
           }
         });
       });
@@ -155,29 +149,18 @@
         if (D.valid(s.birthday[w])) yearlyBetween(s.birthday[w], from, to).forEach(x => { if (x.n > 0) out.push({ date: x.date, title: nm(w) + ' 生日', kind: 'birthday', who: w, color: '#f59e0b', sub: x.n + ' 歲' }); });
       });
     }
-    if (on('period')) {
-      const p = periodInfo();
-      if (p.next && p.next >= from && p.next <= to) out.push({ date: p.next, title: '經期大約開始', kind: 'period', color: '#f472b6', sub: '預計' });
+    if (on('period') && App.period) {
+      const nx = App.period.nextMarker();
+      if (nx && nx >= from && nx <= to) out.push({ date: nx, title: '經期大約開始', kind: 'period', color: '#f472b6', sub: '預計' });
     }
     out.sort((x, y) => x.date < y.date ? -1 : x.date > y.date ? 1 : (x.sub || '').localeCompare(y.sub || ''));
     return out;
   }
   function periodDays(from, to) {
     const res = {};
-    if (!on('period')) return res;
-    const p = periodInfo();
-    p.recs.forEach(r => {
-      const end = r.end && D.valid(r.end) ? r.end : D.add(r.start, p.len - 1);
-      for (let d = r.start; d <= end && d <= to; d = D.add(d, 1)) if (d >= from) res[d] = 'period';
-    });
-    if (p.last) {
-      let st = D.add(p.last.start, p.cycle);
-      let guard = 0;
-      while (st <= to && guard++ < 20000) {
-        if (D.add(st, p.len) >= from) for (let j = 0; j < p.len; j++) { const d = D.add(st, j); if (d >= from && d <= to && !res[d] && d > D.today()) res[d] = 'pred'; }
-        st = D.add(st, p.cycle);
-      }
-    }
+    if (!on('period') || !App.period) return res;
+    const m = App.period.dayMap(from, to);
+    for (const d in m) if (m[d].type === 'period' || m[d].type === 'pred') res[d] = m[d].type;
     return res;
   }
 
@@ -227,12 +210,13 @@
   function pageHome() {
     const s = S(), t = D.today(), me = ME(), ot = OT();
     let h = '<div class="topbar"><span class="home-date">' + D.full(t) + '</span><a href="#/profile" class="round-btn" aria-label="個人檔案">' + icon('more') + '</a></div>';
+    if (App.update && App.update.available) h += '<button class="glass card row update-bar" data-act="do-update" style="width:100%;text-align:left;gap:12px">' + icon('download', 'sm') + '<span class="grow"><b>有新版本 ' + esc(App.update.available) + '</b><div class="small muted">按一下更新</div></span>' + icon('chevR', 'sm') + '</button>';
 
     h += '<div class="couple"><div class="avatars">' + avatar('a') + avatar('b') + '</div>' +
       '<div class="couple-names">' + esc(nm('a')) + '<span class="amp">&amp;</span>' + esc(nm('b')) + '</div>';
     if (D.valid(s.together)) {
       const n = D.diff(s.together, t) + 1;
-      h += '<button class="together-link" data-act="together">' + (n > 0 ? '在一起第 <b>' + n + '</b> 天' : '還有 <b>' + (1 - n) + '</b> 天就在一起了') + icon('chevR', 'xs') + '</button>';
+      h += '<button class="together-link" data-act="together-info">' + (n > 0 ? '在一起 ' + ymdHTML(s.together, t) : '還有 <b>' + (1 - n) + '</b> 天就在一起了') + icon('chevR', 'xs') + '</button>';
     } else {
       h += '<button class="together-link" data-act="together">你們從甚麼時候在一起？' + icon('chevR', 'xs') + '</button>';
     }
@@ -284,7 +268,7 @@
       const up = markers(t, D.add(t, 60)).slice(0, 3);
       h += '<a href="#/calendar" class="glass card" style="display:block"><div class="row between"><div class="row" style="gap:8px">' + icon('cal', 'sm') + '<b>接下來</b></div><span class="faint">' + icon('chevR', 'sm') + '</span></div>';
       if (!up.length) h += '<div class="muted small" style="margin-top:8px">暫時沒有計劃</div>';
-      else h += up.map(m => '<div class="row" style="margin-top:10px;gap:10px"><span class="tag" style="background:' + m.color + '1f;color:' + m.color + '">' + D.smart(m.date) + '</span><span class="grow" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.title) + '</span></div>').join('');
+      else h += up.map(m => '<div class="row" style="margin-top:10px;gap:10px"><span class="tag" style="background:color-mix(in srgb,' + m.color + ' 13%,transparent);color:' + m.color + '">' + D.smart(m.date) + '</span><span class="grow" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.title) + '</span></div>').join('');
       h += '</a>';
     }
 
@@ -313,14 +297,18 @@
       const w = Store.all('wish').filter(x => !x.done).length;
       tiles.push('<a href="#/wishes" class="glass card tile"><span class="chev">' + icon('chevR', 'sm') + '</span><span class="ic">' + icon('heart', 'sm') + '</span><div class="tt">願望清單</div><div class="ts">' + (w ? w + ' 個願望' : '沒有願望') + '</div></a>');
     }
-    if (on('period')) {
-      const p = periodInfo();
-      let txt = '記錄第一次';
-      if (p.next) { const n = D.diff(t, p.next); txt = n > 0 ? '大約 ' + n + ' 天後' : n === 0 ? '可能今天開始' : '遲了 ' + (-n) + ' 天'; }
+    const ptxt = on('period') && App.period ? App.period.homeText() : null;
+    if (ptxt != null) {
+      const txt = ptxt;
       tiles.push('<a href="#/period" class="glass card tile"><span class="chev">' + icon('chevR', 'sm') + '</span><span class="ic" style="color:#db2777">' + icon('drop', 'sm') + '</span><div class="tt">經期</div><div class="ts">' + txt + '</div></a>');
     }
     tiles.push('<a href="#/sections" class="glass card tile"><span class="chev">' + icon('chevR', 'sm') + '</span><span class="ic">' + icon('grid', 'sm') + '</span><div class="tt">所有部分</div><div class="ts">待辦、清單、日曆…</div></a>');
     h += '<div class="tile-grid">' + tiles.join('') + '</div>';
+    const ex = App.extraTiles ? App.extraTiles() : [];
+    if (ex.length) {
+      h += '<div class="section-h">我們的東西</div><div class="tile-grid">' + ex.map(([href, ic, tt, ts]) =>
+        '<a href="' + href + '" class="glass card tile"><span class="chev">' + icon('chevR', 'sm') + '</span><span class="ic">' + icon(ic, 'sm') + '</span><div class="tt">' + tt + '</div><div class="ts">' + esc(ts) + '</div></a>').join('') + '</div>';
+    }
 
     // 先做這幾件事
     const todo = [
@@ -335,6 +323,42 @@
     }
     h += '<div class="center" style="margin-top:20px">' + syncPill() + '</div>';
     return h;
+  }
+
+  // 兩個日子之間：X 年 X 個月 X 天
+  function ymdDiff(a, b) {
+    const [y1, m1, d1] = D.ymd(a), [y2, m2, d2] = D.ymd(b);
+    let y = y2 - y1, m = m2 - m1, d = d2 - d1;
+    if (d < 0) { m--; const pm = m2 - 1 < 1 ? 12 : m2 - 1, py = m2 - 1 < 1 ? y2 - 1 : y2; d += D.daysInMonth(py, pm); }
+    if (m < 0) { y--; m += 12; }
+    return { y, m, d };
+  }
+  function ymdHTML(a, b) {
+    const r = ymdDiff(a, b);
+    return (r.y ? '<b>' + r.y + '</b> 年 ' : '') + (r.y || r.m ? '<b>' + r.m + '</b> 個月 ' : '') + '<b>' + r.d + '</b> 天';
+  }
+  function togetherInfoSheet() {
+    const s = S(), t = D.today();
+    if (!D.valid(s.together)) return togetherSheet();
+    const r = ymdDiff(s.together, t), n = D.diff(s.together, t) + 1;
+    const months = r.y * 12 + r.m;
+    const big = (v, l) => '<div class="glass card" style="margin:0 0 10px;padding:18px 20px"><div class="small muted">' + l + '</div><div style="font-size:26px;font-weight:750;margin-top:4px">' + v + '</div></div>';
+    let nx = '';
+    const nh = n <= 0 ? 100 : n % 100 === 0 ? n : Math.ceil(n / 100) * 100;
+    const ny = nextYearly(s.together);
+    const c1 = { left: D.diff(t, D.add(s.together, nh - 1)), label: '第 ' + nh + ' 天' };
+    const c2 = ny ? { left: D.diff(t, ny.date), label: ny.n + ' 週年' } : null;
+    const pick = c2 && c2.left < c1.left ? c2 : c1;
+    nx = pick.left === 0 ? pick.label + '：就是今天！' : pick.label + '：還有 ' + pick.left + ' 天';
+    openSheet('<h2>在一起</h2><p class="muted" style="margin-top:-8px">由 ' + D.ymdText(s.together) + ' 開始</p>' +
+      big(ymdHTML(s.together, t).replace(/<\/?b>/g, ''), '年月日') +
+      big((months ? months + ' 個月 ' : '') + r.d + ' 天', '月日') +
+      big('第 ' + n.toLocaleString('en-US') + ' 天', '日數') +
+      '<p class="small muted" style="margin:6px 4px 0">' + icon('heart', 'xs') + ' 下一個：' + nx + '</p>' +
+      '<div class="actions"><button class="btn ghost" data-edit>' + icon('pencil', 'sm') + '改日子</button><button class="btn" data-x>好</button></div>', api => {
+      api.$('[data-x]').onclick = () => api.close();
+      api.$('[data-edit]').onclick = () => { api.close(); togetherSheet(); };
+    });
   }
 
   function currentIdea() {
@@ -591,7 +615,8 @@
           const title = f('title').value.trim(); if (!title) { f('title').focus(); return; }
           Store.put('wish', Object.assign({}, x, {
             title, link: f('link').value.trim(), price: f('price').value.trim(), note: f('note').value.trim(),
-            cat: getCat() || 'other', want: f('want').checked, done: id ? f('done').checked : false
+            cat: getCat() || 'other', want: f('want').checked, done: id ? f('done').checked : false,
+            doneAt: id && f('done').checked ? (x.doneAt || D.today()) : ''
           }), id);
           api.close();
           if (!id && preset) toast('已加到願望清單', 'heart');
@@ -705,36 +730,94 @@
     });
   }
   function eventSheet(id, preset) {
-    const x = id ? Store.get(id) : Object.assign({ title: '', place: '', date: D.today(), time: '20:00', end: '', allDay: false, cat: 'date', repeat: 'none', note: '' }, preset);
+    const x = id ? Store.get(id) : Object.assign({ title: '', place: '', date: D.today(), time: '20:00', end: '', endTime: '', allDay: false, cat: 'date', repeat: 'none' }, preset);
     if (!x) return;
     const reps = [['none', '不重複'], ['weekly', '每週'], ['monthly', '每月'], ['yearly', '每年']];
+    const multi0 = !!(x.end && x.end > x.date);
     openSheet(
       '<h2>' + (id ? '活動' : '新活動') + '</h2>' +
-      '<div class="field-wrap with-count"><input class="field" name="title" maxlength="200" placeholder="這是甚麼？" value="' + esc(x.title) + '"' + (id || x.title ? '' : ' autofocus') + '><span class="count" data-c>' + x.title.length + '/200</span></div>' +
+      (id ? '' : '<div class="quick glass"><div class="row" style="gap:8px">' + icon('spark', 'sm') + '<input class="grow" name="quick" placeholder="隨手寫一句，例如：10月30日去迪士尼玩全日" autocomplete="off"><button type="button" class="btn sm" data-fill style="padding:0 14px">填好</button></div><div class="small muted" data-qprev style="margin-top:6px;display:none"></div></div>') +
+      '<div class="field-wrap with-count"><input class="field" name="title" maxlength="200" placeholder="這是甚麼？" value="' + esc(x.title) + '"><span class="count" data-c>' + x.title.length + '/200</span></div>' +
       '<div class="field-wrap"><input class="field" name="place" maxlength="200" placeholder="地點（可選）" value="' + esc(x.place) + '"></div>' +
-      '<div class="two"><div><div class="label">日期</div><input type="date" class="field" name="date" value="' + esc(x.date) + '"></div>' +
-      '<div data-timebox><div class="label">時間</div><input type="time" class="field" name="time" value="' + esc(x.time || '') + '"></div></div>' +
-      '<div class="label">最後一天（多天的活動才需要）</div><input type="date" class="field" name="end" value="' + esc(x.end || '') + '">' +
-      '<div class="set-row" style="margin-top:8px"><div style="font-weight:600">全日</div>' + switchHTML('allDay', x.allDay) + '</div>' +
+      '<div class="set-row"><div style="font-weight:600">全日</div>' + switchHTML('allDay', x.allDay) + '</div>' +
+      '<div class="set-row"><div><div style="font-weight:600">多於一天</div><div class="small muted">揀到哪天哪個時間結束</div></div>' + switchHTML('multi', multi0) + '</div>' +
+      '<div class="label" data-startlbl>' + (multi0 ? '開始' : '日期') + '</div><div class="two" data-startrow><input type="date" class="field" name="date" value="' + esc(x.date) + '"><input type="time" class="field" name="time" value="' + esc(x.time || '') + '" data-t></div>' +
+      '<div data-endbox' + (multi0 ? '' : ' class="hidden"') + '><div class="label">結束</div><div class="two" data-endrow><input type="date" class="field" name="end" value="' + esc(x.end || '') + '"><input type="time" class="field" name="endTime" value="' + esc(x.endTime || '') + '" data-t></div></div>' +
       '<div class="label">種類</div>' + chipsHTML(EVENT_CATS, x.cat, 'cat') +
       '<div class="label">重複</div><div class="seg" data-rep>' + reps.map(([k, n]) => '<button type="button" data-k="' + k + '" class="' + (x.repeat === k ? 'on' : '') + '">' + n + '</button>').join('') + '</div>' +
       '<div class="actions">' + (id ? '<button class="btn ghost" data-del style="flex:0 0 auto;width:50px;padding:0;color:var(--danger)">' + icon('trash', 'sm') + '</button>' : '') + '<button class="btn" data-save>儲存</button></div>',
       api => {
         const f = n => api.$('[name="' + n + '"]');
-        f('title').addEventListener('input', () => api.$('[data-c]').textContent = f('title').value.length + '/200');
-        const getCat = bindChips(api.el, 'cat');
+        const cnt = () => api.$('[data-c]').textContent = f('title').value.length + '/200';
+        f('title').addEventListener('input', cnt);
+        let getCat = bindChips(api.el, 'cat');
         let rep = x.repeat || 'none';
         api.$('[data-rep]').onclick = e => { const b = e.target.closest('button'); if (!b) return; rep = b.dataset.k; api.$$('[data-rep] button').forEach(z => z.classList.toggle('on', z === b)); };
-        const tb = () => api.$('[data-timebox]').style.opacity = f('allDay').checked ? .35 : 1;
-        f('allDay').onchange = tb; tb();
+        const sync = () => {
+          const ad = f('allDay').checked, mu = f('multi').checked;
+          api.$$('[data-t]').forEach(el => el.classList.toggle('hidden', ad));
+          api.$$('[data-startrow],[data-endrow]').forEach(el => el.style.gridTemplateColumns = ad ? '1fr' : '');
+          api.$('[data-endbox]').classList.toggle('hidden', !mu);
+          api.$('[data-startlbl]').textContent = mu ? '開始' : '日期';
+          if (mu && (!f('end').value || f('end').value <= f('date').value)) f('end').value = D.add(f('date').value || D.today(), 1);
+          if (mu && !f('endTime').value && f('time').value) f('endTime').value = f('time').value;
+        };
+        f('allDay').onchange = sync; f('multi').onchange = sync;
+        f('date').addEventListener('change', () => { if (f('multi').checked && f('end').value && f('end').value < f('date').value) f('end').value = f('date').value; });
+        sync();
+        // 隨手寫一句
+        const q = f('quick');
+        if (q) {
+          let parsed = null;
+          const show = () => {
+            const box = api.$('[data-qprev]');
+            parsed = q.value.trim() ? parseEvent(q.value, D.today()) : null;
+            if (!parsed || (!parsed.found.date && !parsed.found.time && !parsed.allDay)) { box.style.display = q.value.trim() ? 'block' : 'none'; box.textContent = q.value.trim() ? '看不出日期或時間，會只用作標題。' : ''; return; }
+            const bits = [];
+            if (parsed.date) bits.push(D.smart(parsed.date));
+            if (parsed.end) bits.push('至 ' + D.smart(parsed.end));
+            if (parsed.allDay) bits.push('全日'); else if (parsed.time) bits.push(parsed.time + (parsed.endTime ? '–' + parsed.endTime : ''));
+            if (parsed.title) bits.push('「' + parsed.title + '」');
+            box.style.display = 'block'; box.textContent = '→ ' + bits.join(' · ');
+          };
+          const apply = () => {
+            show();
+            if (!q.value.trim()) return false;
+            const p = parsed || { title: q.value.trim(), found: {} };
+            f('title').value = (p.title || q.value.trim()).slice(0, 200); cnt();
+            if (p.date) f('date').value = p.date;
+            f('allDay').checked = !!p.allDay || (!!p.found.date && !p.found.time); // 有日期沒時間：當全日
+            if (p.time) f('time').value = p.time;
+            f('multi').checked = !!p.end;
+            if (p.end) { f('end').value = p.end; f('endTime').value = p.endTime || ''; }
+            else if (p.endTime) { f('multi').checked = false; }
+            x.endTime = p.end ? '' : (p.endTime || '');
+            sync();
+            q.value = ''; show();
+            toast('已填好，看看對不對', 'spark');
+            return true;
+          };
+          let tm;
+          q.addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(show, 200); });
+          q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+          api.$('[data-fill]').onclick = apply;
+          api._applyQuick = apply;
+          setTimeout(() => q.focus(), 360);
+        }
         api.$('[data-save]').onclick = () => {
-          const title = f('title').value.trim(); if (!title) { f('title').focus(); return; }
+          if (q && q.value.trim() && !f('title').value.trim()) api._applyQuick();
+          const title = f('title').value.trim(); if (!title) { (q || f('title')).focus(); return; }
           const date = f('date').value; if (!D.valid(date)) { f('date').focus(); return; }
-          let end = f('end').value; if (end && end <= date) end = '';
-          Store.put('event', Object.assign({}, x, { title, place: f('place').value.trim(), date, time: f('time').value, end, allDay: f('allDay').checked, cat: getCat() || 'other', repeat: rep }), id);
+          const allDay = f('allDay').checked, mu = f('multi').checked;
+          let end = mu ? f('end').value : '';
+          if (end && end <= date) end = '';
+          const time = allDay ? '' : f('time').value;
+          let endTime = allDay ? '' : end ? f('endTime').value : (x.endTime || '');
+          if (!end && endTime && endTime <= time) endTime = '';
+          Store.put('event', Object.assign({}, x, { title, place: f('place').value.trim(), date, time, end, endTime, allDay, cat: getCat() || 'other', repeat: rep }), id);
           ui.calSel = date; const [yy, mm] = D.ymd(date); ui.calY = yy; ui.calM = mm;
           api.close();
-          toast('已加到日曆', 'cal');
+          toast('已加到日曆 · ' + D.smart(date), 'cal');
         };
         if (id) api.$('[data-del]').onclick = () => { Store.remove(id); api.close(); toast('已刪除，可以在「最近刪除」還原', 'trash'); };
       }
@@ -790,47 +873,6 @@
     box.innerHTML = notePhoto ? '<div class="photo-prev"><img src="' + notePhoto + '" alt=""><button data-act="note-photo-x" aria-label="移除">' + icon('x', 'sm') + '</button></div>' : '';
   }
 
-  /* ================= 經期 ================= */
-  function pagePeriod() {
-    const p = periodInfo(), t = D.today();
-    let h = head('經期', '記錄開始的日子，就會推算下一次', { back: true });
-    const cur = p.last && (() => { const end = p.last.end || D.add(p.last.start, p.len - 1); return t >= p.last.start && t <= end ? D.diff(p.last.start, t) + 1 : 0; })();
-    h += '<div class="glass card hero" style="background:radial-gradient(120% 120% at 0% 0%,rgba(255,200,230,.55),rgba(255,200,230,0) 60%),radial-gradient(120% 120% at 100% 100%,rgba(186,210,255,.85),rgba(186,210,255,0) 60%),linear-gradient(135deg,rgba(236,240,255,.92),rgba(232,238,255,.85))">';
-    if (!p.last) {
-      h += '<div class="eyebrow" style="color:#c0367f">' + icon('drop', 'xs') + '還沒有記錄</div><div class="q-title">記錄上一次開始的日子</div><div class="muted small">記錄越多次，推算越準。</div>';
-    } else if (cur) {
-      h += '<div class="eyebrow" style="color:#c0367f">' + icon('drop', 'xs') + '現在</div><div class="q-title">經期第 ' + cur + ' 天</div><div class="muted small">下一次大約 ' + D.smart(p.next) + '</div>';
-    } else {
-      const n = D.diff(t, p.next);
-      h += '<div class="eyebrow" style="color:#c0367f">' + icon('drop', 'xs') + '下一次</div><div class="q-title">' + (n > 0 ? '大約 ' + n + ' 天後' : n === 0 ? '可能今天開始' : '遲了 ' + (-n) + ' 天') + '</div><div class="muted small">' + D.ymdText(p.next) + ' 左右</div>';
-    }
-    h += '<div class="counts" style="grid-template-columns:1fr 1fr"><div style="padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.62)"><div class="n">' + p.cycle + ' 天</div><div class="t">平均週期' + (p.recs.length < 2 ? '（預設）' : '') + '</div></div><div style="padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.62)"><div class="n">' + p.len + ' 天</div><div class="t">經期長度</div></div></div>';
-    h += '<div class="hero-actions">' + (cur && !p.last.end ? '<button class="btn sm" data-act="period-end">今天結束了</button>' : '<button class="btn sm" data-act="period-start">今天開始了</button>') + '<button class="btn ghost sm" data-act="period-add">記錄另一天</button></div></div>';
-    h += '<div class="glass card tight"><div class="set-row" style="padding:12px 16px"><div><div style="font-weight:600">經期長度</div><div class="small muted">沒有記錄結束日時用這個</div></div><div class="row" style="gap:6px"><button class="round-btn" style="width:36px;height:36px" data-act="period-len" data-d="-1">−</button><b style="width:28px;text-align:center">' + p.len + '</b><button class="round-btn" style="width:36px;height:36px" data-act="period-len" data-d="1">+</button></div></div></div>';
-    if (p.recs.length) {
-      h += '<div class="section-h">之前的記錄</div><div class="glass card tight list no-icon">' + p.recs.slice().reverse().map((r, i, arr) => {
-        const prev = arr[i + 1];
-        const len = r.end ? D.diff(r.start, r.end) + 1 : null;
-        return row({ act: 'period-edit', id: r.id, t: D.ymdText(r.start), s: [len ? len + ' 天' : '沒有記錄結束', prev ? '週期 ' + D.diff(prev.start, r.start) + ' 天' : ''].filter(Boolean).join(' · ') });
-      }).join('') + '</div>';
-    }
-    h += '<p class="small faint" style="margin:14px 4px">推算只是根據你們的記錄，偶爾不準很正常。身體不舒服請看醫生。</p>';
-    return h;
-  }
-  function periodSheet(id) {
-    const x = id ? Store.get(id) : { start: D.today(), end: '' };
-    openSheet('<h2>' + (id ? '這次經期' : '記錄一次') + '</h2><div class="label">開始</div><input type="date" class="field" name="start" value="' + esc(x.start) + '"><div class="label">結束（可選）</div><input type="date" class="field" name="end" value="' + esc(x.end || '') + '">' +
-      '<div class="actions">' + (id ? '<button class="btn ghost" data-del style="flex:0 0 auto;width:50px;padding:0;color:var(--danger)">' + icon('trash', 'sm') + '</button>' : '') + '<button class="btn" data-save>儲存</button></div>', api => {
-      api.$('[data-save]').onclick = () => {
-        const start = api.$('[name=start]').value; let end = api.$('[name=end]').value;
-        if (!D.valid(start)) return;
-        if (end && end < start) end = '';
-        Store.put('period', { start, end }, id); api.close();
-      };
-      if (id) api.$('[data-del]').onclick = () => { Store.remove(id); api.close(); };
-    });
-  }
-
   /* ================= 所有部分 ================= */
   function pageSections() {
     let h = head('所有部分', '開啟的部分有話要說時，就會出現在主頁。', { back: true });
@@ -844,14 +886,19 @@
       L('lists', 'list', '清單', '買菜、電影、計劃', '#/lists') +
       L('wishes', 'star', '願望清單', '想去的地方、想要的東西', '#/wishes') +
       L('calendar', 'cal', '日曆', '活動和重要日子', '#/calendar') + '</div>';
-    const soon = [['hourglass', '時間囊'], ['gift', '禮物雷達'], ['shield', '保險箱'], ['spark', '我們的一年'], ['book', '我們的故事'], ['card', '會員卡'], ['note', '筆記'], ['heart', '要知道的事'], ['coffee', '一起做'], ['vote', '一起決定']];
+    h += '<div class="label">你們存下的</div><div class="glass card tight list">' +
+      L('know', 'note', '要知道的事', '尺碼、喜歡的、不喜歡的', '#/know') +
+      L('plans', 'card', '計劃', '一個目標，一起存錢', '#/plans') +
+      L('jots', 'pencil', '筆記', '你們兩個的本子', '#/jots') +
+      L('year', 'spark', '我們的一年', '這十二個月做過的', '#/year') + '</div>';
+    const soon = [['hourglass', '時間囊'], ['gift', '禮物雷達'], ['shield', '保險箱'], ['book', '我們的故事'], ['card', '會員卡'], ['coffee', '一起做'], ['vote', '一起決定']];
     h += '<div class="label">即將推出</div><div class="glass card tight list">' + soon.map(([ic, t]) => row({ ic, t, cls: 'dim', noChev: true, val: '<span class="tag gray">即將推出</span>' })).join('') + '</div>';
     h += '<a href="#/parts" class="btn ghost block" style="margin-top:6px">' + icon('sliders', 'sm') + '開關部分</a>';
     return h;
   }
   function pageParts() {
     const sec = S().sections;
-    const items = [['question', 'help', '今日問題'], ['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['period', 'drop', '經期']];
+    const items = [['question', 'help', '今日問題'], ['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['period', 'drop', '經期'], ['know', 'note', '要知道的事'], ['plans', 'card', '計劃'], ['jots', 'pencil', '筆記'], ['year', 'spark', '我們的一年']];
     let h = head('部分', '這個應用程式為你們兩個準備了甚麼。', { back: true });
     h += '<div class="hint-bar">關掉一個部分只是收起來，不會刪除；再開啟，全部都回來。兩部手機會一起改。</div>';
     h += '<div class="glass card tight list">' + items.map(([k, ic, t]) => '<label class="li"><span class="ic">' + icon(ic, 'sm') + '</span><span class="grow tt">' + t + '</span><span class="switch"><input type="checkbox" data-part="' + k + '"' + (sec[k] !== false ? ' checked' : '') + '><span></span></span></label>').join('') + '</div>';
@@ -862,9 +909,11 @@
   function pageProfile() {
     const s = S(), me = ME(), ot = OT();
     let h = head('個人檔案', '');
-    h += '<button class="glass card row" style="width:100%;text-align:left;gap:14px" data-act="names">' + avatar(me) + '<span class="grow"><div style="font-size:20px;font-weight:700">' + esc(nm(me)) + '</div><div class="small muted">和 ' + esc(nm(ot)) + ' 一起</div></span><span class="faint">' + icon('pencil', 'sm') + '</span></button>';
+    h += '<div class="glass card row" style="gap:14px"><button data-act="avatar" aria-label="頭像" class="avatar-edit">' + avatar(me) + '<span class="cam">' + icon('image', 'xs') + '</span></button><button class="grow" data-act="names" style="text-align:left"><div style="font-size:20px;font-weight:700">' + esc(nm(me)) + '</div><div class="small muted">和 ' + esc(nm(ot)) + ' 一起</div></button><button class="faint" data-act="names" aria-label="改名">' + icon('pencil', 'sm') + '</button></div>';
     h += '<div class="section-h">我們</div><div class="glass card tight list">' +
       row({ act: 'names', ic: 'user', t: '我們的名字', s: esc(nm('a')) + ' &amp; ' + esc(nm('b')) }) +
+      row({ act: 'whoami', ic: 'phone', t: '這部裝置是', s: esc(nm(me)) + ' · 每人可以用多部裝置' }) +
+      row({ act: 'avatar', ic: 'image', t: '我的頭像', s: avatarPhoto(me) ? '已設定' : '還沒有上載' }) +
       row({ act: 'together', ic: 'heart', t: '在一起的日子', s: D.valid(s.together) ? D.ymdText(s.together) : '還沒有設定' }) +
       row({ act: 'birthday', ic: 'cake', t: '生日', s: [me, ot].map(w => esc(nm(w)) + '：' + (D.valid(s.birthday[w]) ? D.md(s.birthday[w]) : '未設定')).join('　') }) + '</div>';
     h += '<div class="section-h">同步' + syncPill() + '</div><div class="glass card tight list">' +
@@ -872,7 +921,9 @@
       row({ act: 'invite', ic: 'userPlus', t: '邀請你的另一半', s: paired() ? '已經在一起同步' : '傳一條連結給對方' }) +
       (Sync.configured() ? row({ act: 'sync-now', ic: 'refresh', t: '立即同步', noChev: true }) : '') + '</div>';
     h += '<div class="section-h">應用程式</div><div class="glass card tight list">' +
+      row({ act: 'theme', ic: 'sun', t: '顏色', s: Store.device.theme === 'mint' ? '薄荷綠' : '天空藍' }) +
       row({ href: '#/parts', ic: 'grid', t: '部分', s: '開啟和關掉應用程式的各個部分' }) +
+      row({ act: 'check-update', ic: 'refresh', t: '檢查更新', s: App.update && App.update.available ? '有新版本 ' + esc(App.update.available) + '，按一下更新' : '目前版本 ' + esc(window.APP_VERSION || 'dev') }) +
       row({ act: 'howto', ic: 'phone', t: '加到主畫面', s: '像 app 一樣全螢幕打開' }) + '</div>';
     h += '<div class="section-h">你的資料</div><div class="glass card tight list">' +
       row({ href: '#/privacy', ic: 'shield', t: '存甚麼資料，為甚麼', s: '你們的東西放在哪裏' }) +
@@ -881,7 +932,7 @@
       row({ act: 'import', ic: 'upload', t: '從備份還原', s: '揀之前下載的備份檔' }) + '</div>';
     h += '<div class="glass card tight list">' + row({ act: 'logout', ic: 'logout', icCls: 'red', t: '在這部手機登出', s: '只清除這部手機的資料，雲端的會保留', cls: 'danger' }) + '</div>';
     h += '<input type="file" accept="application/json,.json" id="importInput" class="hidden">';
-    h += '<p class="center small faint" style="margin-top:18px">我們 · v1.0</p>';
+    h += '<p class="center small faint" style="margin-top:18px">我們 · v' + esc(window.APP_VERSION || 'dev') + '</p>';
     return h;
   }
 
@@ -902,7 +953,7 @@
 
   function pageTrash() {
     const items = Store.trash().sort((a, b) => b.deleted - a.deleted);
-    const lbl = { todo: '待辦', list: '清單', item: '清單項目', wish: '願望', event: '活動', day: '日子', period: '經期記錄', note: '便條', answer: '答案' };
+    const lbl = { todo: '待辦', list: '清單', item: '清單項目', wish: '願望', event: '活動', day: '日子', period: '經期記錄', note: '便條', answer: '答案', know: '要知道的事', plan: '計劃', dep: '存款紀錄', jot: '筆記', pday: '經期感覺' };
     let h = head('最近刪除', '你們刪除的東西會在這裏留 7 天，之後會自動消失。', { back: true });
     if (!items.length) h += '<div class="empty"><h3 style="font-weight:500;font-size:16px" class="muted">沒有刪除的東西。<br>如果有東西不見了，會在這裏。</h3></div>';
     else h += '<div class="glass card tight list">' + items.map(r => {
@@ -1082,13 +1133,104 @@
     eventSheet(null, { title: idea.t, date: sat, time: '10:00', cat: 'date' });
   }
 
+  /* ================= 身份、頭像、顏色 ================= */
+  function whoamiSheet() {
+    const me = ME();
+    openSheet('<h2>這部裝置是誰？</h2><p class="small muted" style="margin-top:-8px">每人可以在任何數量的裝置上使用，每部裝置揀一次就可以。螢幕便條、今日問題的答案都會跟着身份走。</p>' +
+      ['a', 'b'].map(w => '<button class="opt" data-w="' + w + '">' + avatar(w, 'sm') + '<span>' + esc(nm(w)) + '</span><span class="ck">' + (w === me ? icon('check') : '') + '</span></button>').join(''), api => {
+      api.$$('[data-w]').forEach(b => b.onclick = () => {
+        const w = b.dataset.w; api.close();
+        if (w !== ME()) { Store.setDevice({ me: w }); toast('這部裝置現在是 ' + nm(w), 'check'); }
+      });
+    });
+  }
+  function avatarSheet() {
+    const me = ME(), ph = avatarPhoto(me);
+    openSheet('<h2>我的頭像</h2><div class="center" style="margin:6px 0 18px"><div style="display:inline-block">' + avatar(me, 'xl') + '</div></div>' +
+      '<input type="file" accept="image/*" class="hidden" data-file>' +
+      '<div class="stack"><button class="btn block" data-up>' + icon('image', 'sm') + (ph ? '換一張相片' : '上載相片') + '</button>' +
+      (ph ? '<button class="btn ghost block" data-rm style="color:var(--danger)">' + icon('trash', 'sm') + '移除相片，用名字</button>' : '') + '</div>' +
+      '<p class="small faint center" style="margin-top:12px">不上載也可以，會顯示你名字的第一個字。</p>', api => {
+      const inp = api.$('[data-file]');
+      api.$('[data-up]').onclick = () => inp.click();
+      inp.onchange = async () => {
+        const f = inp.files[0]; if (!f) return;
+        try { const photo = await cropSquare(f, 320); Store.put('avatar', { photo }, 'avatar_' + me); api.close(); toast('頭像已更新', 'check'); }
+        catch (e) { toast('讀不到這張相片'); }
+      };
+      const rm = api.$('[data-rm]'); if (rm) rm.onclick = () => { Store.remove('avatar_' + me, { silent: true }); api.close(); };
+    });
+  }
+  function cropSquare(file, size) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader(); fr.onerror = reject;
+      fr.onload = () => { const img = new Image(); img.onerror = reject; img.onload = () => {
+        const s = Math.min(img.width, img.height), c = document.createElement('canvas');
+        c.width = c.height = size;
+        c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      }; img.src = fr.result; };
+      fr.readAsDataURL(file);
+    });
+  }
+  const THEMES = [['blue', '天空藍', 'linear-gradient(145deg,#7ab2ff,#2f6bff)'], ['mint', '薄荷綠', 'linear-gradient(145deg,#8ff0d8,#14a38b)']];
+  function applyTheme() {
+    const t = Store.device.theme === 'mint' ? 'mint' : 'blue';
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem('us.theme', t); } catch (e) {}
+    const meta = document.querySelector('meta[name=theme-color]');
+    if (meta) meta.content = t === 'mint' ? '#e8f8f3' : '#eaf2ff';
+  }
+  function themeSheet() {
+    const cur = Store.device.theme === 'mint' ? 'mint' : 'blue';
+    openSheet('<h2>顏色</h2><p class="small muted" style="margin-top:-8px">只改這部裝置，對方可以揀自己喜歡的。</p><div class="two">' +
+      THEMES.map(([k, n, g]) => '<button class="glass card theme-pick' + (k === cur ? ' on' : '') + '" data-k="' + k + '"><span class="sw" style="background:' + g + '"></span><b>' + n + '</b></button>').join('') + '</div>', api => {
+      api.$$('[data-k]').forEach(b => b.onclick = () => { Store.setDevice({ theme: b.dataset.k }); applyTheme(); api.$$('[data-k]').forEach(z => z.classList.toggle('on', z === b)); });
+    });
+  }
+
+  /* ================= 檢查更新 ================= */
+  App.update = { available: '', notes: '', last: 0 };
+  async function checkUpdate(manual) {
+    if (!window.APP_VERSION) { if (manual) toast('本機測試版本，不用更新'); return; }
+    App.update.last = Date.now();
+    try {
+      const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+      const j = await r.json();
+      if (j.version && j.version !== window.APP_VERSION) {
+        const isNew = App.update.available !== j.version;
+        App.update.available = j.version; App.update.notes = j.notes || '';
+        if (manual) updateSheet(); else if (isNew) render();
+      } else if (manual) toast('已經是最新版本 ' + window.APP_VERSION, 'check');
+    } catch (e) { if (manual) toast('檢查不到，請確認有網絡'); }
+  }
+  function updateSheet() {
+    openSheet('<h2>有新版本</h2><p class="muted" style="margin-top:-8px">' + esc(window.APP_VERSION) + ' → <b>' + esc(App.update.available) + '</b></p>' +
+      (App.update.notes ? '<div class="glass card small" style="white-space:pre-wrap">' + esc(App.update.notes) + '</div>' : '') +
+      '<p class="small muted">你們的資料不會受影響。</p><div class="actions"><button class="btn ghost" data-x>之後</button><button class="btn" data-go>' + icon('refresh', 'sm') + '現在更新</button></div>', api => {
+      api.$('[data-x]').onclick = () => api.close();
+      api.$('[data-go]').onclick = () => { api.close(); doUpdate(); };
+    });
+  }
+  async function doUpdate() {
+    toast('更新中…', 'refresh');
+    try {
+      if (window.caches) for (const k of await caches.keys()) await caches.delete(k);
+      if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) await r.update().catch(() => {});
+    } catch (e) {}
+    try { localStorage.setItem('us.ver', App.update.available); } catch (e) {}
+    location.reload();
+  }
+
   /* ================= 路由 ================= */
   const PAGES = {
     home: pageHome, question: pageQuestion, todo: pageTodo, lists: pageLists, list: pageList, wishes: pageWishes,
-    calendar: pageCalendar, note: pageNote, period: pagePeriod, sections: pageSections, parts: pageParts,
+    calendar: pageCalendar, note: pageNote, sections: pageSections, parts: pageParts,
     profile: pageProfile, sync: pageSync, trash: pageTrash, privacy: pagePrivacy, welcome: pageWelcome
   };
-  const TAB_OF = { home: 'home', question: 'home', note: 'home', sections: 'home', period: 'home', wishes: 'lists', todo: 'todo', lists: 'lists', list: 'lists', calendar: 'calendar', profile: 'profile', sync: 'profile', trash: 'profile', privacy: 'profile', parts: 'profile' };
+  Object.assign(PAGES, App.pages);
+  Object.assign(App, { head, row, emptyHTML, render: () => render() });
+  const TAB_OF = { home: 'home', question: 'home', note: 'home', sections: 'home', period: 'home', wishes: 'lists', todo: 'todo', lists: 'lists', list: 'lists', calendar: 'calendar', profile: 'profile', sync: 'profile', trash: 'profile', privacy: 'profile', parts: 'profile', know: 'home', plans: 'home', jots: 'home', year: 'home' };
   function route() {
     const h = location.hash.replace(/^#\/?/, '') || 'home';
     const [name, ...rest] = h.split('/');
@@ -1258,11 +1400,12 @@
       render();
     },
     async 'note-clear'() { if (await confirmSheet('收回便條？', '對方的主頁不會再顯示。', '收回')) Store.remove('note_' + ME(), { silent: true }); },
-    'period-start'() { Store.put('period', { start: D.today(), end: '' }); toast('已記錄', 'drop'); },
-    'period-end'() { const p = periodInfo(); if (p.last) Store.patch(p.last.id, { end: D.today() }); },
-    'period-add'() { periodSheet(); },
-    'period-edit'(el) { periodSheet(el.dataset.id); },
-    'period-len'(el) { setS({ periodLen: Math.max(2, Math.min(10, S().periodLen + Number(el.dataset.d))) }); },
+    'together-info': togetherInfoSheet,
+    whoami: whoamiSheet,
+    avatar: avatarSheet,
+    theme: themeSheet,
+    'check-update'() { if (App.update.available) updateSheet(); else checkUpdate(true); },
+    'do-update'() { updateSheet(); },
     'sync-now'() { Sync.run(true).then(() => toast(Sync.state === 'ok' ? '已同步' : '同步失敗：' + Sync.msg, Sync.state === 'ok' ? 'check' : null)); },
     async 'sync-test'() {
       const u = document.getElementById('syncUrl').value.trim(), k = document.getElementById('syncKey').value;
@@ -1346,6 +1489,7 @@
     'join-cancel'() { sessionStorage.removeItem('us.join'); if (!Store.device.me) Store.setDevice({ url: '', key: '' }); location.hash = Store.device.me ? '#/home' : '#/welcome'; render(); }
   };
 
+  Object.assign(ACT, App.acts);
   document.addEventListener('click', e => {
     const el = e.target.closest('[data-act]');
     if (!el || !ACT[el.dataset.act]) return;
@@ -1375,6 +1519,7 @@
   Store.on(() => render());
 
   /* ================= 啟動 ================= */
+  applyTheme();
   if (location.hash.startsWith('#join=')) {
     const j = decodeJoin(location.hash.slice(6));
     history.replaceState(null, '', location.pathname + (Store.device.me ? '#/home' : '#/welcome'));
@@ -1390,5 +1535,9 @@
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  window.__us = { Store, Sync, S, markers, periodDays, render };
+  // 自動檢查更新：打開後幾秒、每 30 分鐘、回到 app 時
+  setTimeout(() => checkUpdate(false), 4000);
+  setInterval(() => checkUpdate(false), 30 * 60000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - App.update.last > 10 * 60000) checkUpdate(false); });
+  window.__us = { Store, Sync, S, markers, periodDays, render, checkUpdate };
 })();
