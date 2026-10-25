@@ -191,8 +191,10 @@
       return this.request({ action: 'ping' }, url, key);
     },
 
-    async run() {
+    async run(force) {
       if (!this.configured()) { this.setState('off'); return; }
+      // 密碼錯誤時停止自動同步，免得觸發試算表的防猜保護；手動同步或改密碼時才再試
+      if (!force && /密碼/.test(Store.s.device.lastError || '')) { this.setState('err', Store.s.device.lastError); return; }
       if (!navigator.onLine) { this.setState('err', '沒有網絡'); return; }
       if (this.busy) { this.again = true; return; }
       this.busy = true;
@@ -229,6 +231,7 @@
       } finally {
         this.busy = false;
         if (this.again) { this.again = false; this.schedule(300); }
+        return this.state;
       }
     },
 

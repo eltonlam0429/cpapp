@@ -921,7 +921,7 @@
     h += card('todo', '你們一起做的', '待辦事項、清單、願望、日曆、答案、便條和經期記錄。只有你們兩個看得到。刪掉的東西會留 7 天，以防你們改變主意。');
     h += card('cloud', '雲端在哪裏', '在你們自己 Google Drive 的試算表裏，不經過任何第三方伺服器。誰擁有試算表，誰就擁有資料。');
     h += card('phone', '你的手機', '一份本機副本，讓應用程式沒有網絡也能用。登出的時候，本機副本會從手機刪掉。');
-    h += card('lock', '邀請連結', '連結裏有你們的密碼。只傳給對方，不要貼到公開的地方。如果不小心傳了出去，在 Apps Script 改一個新密碼就可以。');
+    h += card('lock', '邀請連結和密碼', '邀請連結裏沒有密碼，對方打開後要自己輸入。連續猜錯 10 次，試算表會暫停登入 10 分鐘。如果密碼外洩了，在 Apps Script 改一個新密碼，舊的立即失效。');
     return h;
   }
 
@@ -930,10 +930,13 @@
     const join = pendingJoin();
     if (join) {
       const s = S();
-      const st = Sync.state;
-      let h = '<div class="welcome"><div class="logo-mark">' + icon('heart', 'lg') + '</div><h1>加入你們的空間</h1>';
-      if (st === 'busy' || st === 'idle') return h + '<p class="lead">正在讀取資料…</p></div>';
-      if (st === 'err') return h + '<p class="lead">連接失敗：' + esc(Sync.msg) + '</p><button class="btn block" data-act="join-retry">再試一次</button><button class="btn ghost block" style="margin-top:10px" data-act="join-cancel">取消</button></div>';
+      let h = '<div class="welcome"><div class="logo-mark">' + icon(joinStage === 'pw' ? 'lock' : 'heart', 'lg') + '</div><h1>加入你們的空間</h1>';
+      if (joinStage === 'pw') return h + '<p class="lead">輸入你們的密碼。<br>不知道的話，問一問邀請你的人。</p>' +
+        '<div class="glass card"><form data-form="join-pw"><input class="field" id="joinPw" type="password" autocomplete="current-password" placeholder="密碼" autofocus>' +
+        '<button class="btn block" type="submit" style="margin-top:14px" id="joinPwBtn">加入</button></form></div>' +
+        '<button class="btn ghost block" data-act="join-cancel">取消</button></div>';
+      if (joinStage === 'loading') return h + '<p class="lead">正在讀取資料…</p></div>';
+      if (joinStage === 'err') return h + '<p class="lead">讀取失敗：' + esc(Sync.msg) + '</p><button class="btn block" data-act="join-retry">再試一次</button><button class="btn ghost block" style="margin-top:10px" data-act="join-cancel">取消</button></div>';
       h += '<p class="lead">你是哪一位？</p><div class="stack">';
       ['a', 'b'].forEach(w => {
         const n = (s.names[w] || '').trim();
@@ -952,19 +955,51 @@
     try {
       const b = code.replace(/-/g, '+').replace(/_/g, '/');
       const j = JSON.parse(decodeURIComponent(escape(atob(b))));
-      if (j && j.u && j.k) return j;
+      if (j && j.u) return { u: j.u };
     } catch (e) {}
     return null;
   }
-  function encodeJoin(u, k) { return btoa(unescape(encodeURIComponent(JSON.stringify({ u, k })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
-  async function startJoin(j) {
-    sessionStorage.setItem('us.join', JSON.stringify(j));
-    const had = Store.device.me;
-    Store.setDevice({ url: j.u, key: j.k, cursor: had ? Store.device.cursor : 0 });
-    if (had) { sessionStorage.removeItem('us.join'); toast('已連接雲端同步', 'cloud'); location.hash = '#/home'; Sync.run(); return; }
-    location.hash = '#/welcome';
-    Sync.state = 'busy'; render();
-    await Sync.run();
+  // 邀請連結只帶網址，不帶密碼
+  function encodeJoin(u) { return btoa(unescape(encodeURIComponent(JSON.stringify({ u })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+  let joinStage = 'pw'; // pw | loading | err | pick
+  function startJoin(j) {
+    sessionStorage.setItem('us.join', JSON.stringify({ u: j.u }));
+    joinStage = 'pw';
+    if (location.hash !== '#/welcome') location.hash = '#/welcome'; else render();
+  }
+  async function submitJoinPw() {
+    const j = pendingJoin(); if (!j) return;
+    const inp = document.getElementById('joinPw'), btn = document.getElementById('joinPwBtn');
+    const pw = inp.value;
+    if (!pw) { inp.focus(); return; }
+    btn.disabled = true; btn.textContent = '檢查中…';
+    try {
+      await Sync.test(j.u, pw);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '加入';
+      inp.value = ''; inp.focus();
+      toast(e.message || '連接失敗');
+      return;
+    }
+    const d = Store.device;
+    if (d.me) {
+      // 已經用緊這部手機的人，只是更新連接
+      const changed = d.url !== j.u;
+      if (changed) Object.keys(Store.s.records).forEach(id => Store.s.pending[id] = 1);
+      Store.setDevice({ url: j.u, key: pw, cursor: changed ? 0 : d.cursor, lastError: '' });
+      sessionStorage.removeItem('us.join');
+      location.hash = '#/home';
+      Sync.startPolling();
+      toast('已連接雲端同步', 'cloud');
+      return;
+    }
+    Store.setDevice({ url: j.u, key: pw, cursor: 0, lastError: '' });
+    await loadJoin();
+  }
+  async function loadJoin() {
+    joinStage = 'loading'; render();
+    await Sync.run(true);
+    joinStage = Sync.state === 'err' ? 'err' : 'pick';
     render();
   }
 
@@ -1016,8 +1051,9 @@
       });
       return;
     }
-    const link = location.origin + location.pathname + '#join=' + encodeJoin(Store.device.url, Store.device.key);
-    openSheet('<h2>邀請你的另一半</h2><p class="small muted" style="margin-top:-8px">對方用手機打開這條連結，就會加入你們的空間。連結裏有你們的密碼，只傳給對方。</p>' +
+    const link = location.origin + location.pathname + '#join=' + encodeJoin(Store.device.url);
+    openSheet('<h2>邀請你的另一半</h2><p class="small muted" style="margin-top:-8px">對方用手機打開這條連結，再輸入你們的密碼就會加入。</p>' +
+      '<div class="hint-bar">' + icon('lock', 'xs') + ' 連結裏沒有密碼。請用另一個方法告訴對方密碼，例如當面說，不要和連結放在同一個訊息裏。</div>' +
       '<div class="code-box">' + esc(link) + '</div><div class="actions"><button class="btn ghost" data-copy>' + icon('copy', 'sm') + '複製連結</button>' + (navigator.share ? '<button class="btn" data-share>' + icon('share', 'sm') + '分享</button>' : '') + '</div>', api => {
       api.$('[data-copy]').onclick = async () => { toast((await copyText(link)) ? '已複製' : '複製不到，請手動選取', 'copy'); };
       const sh = api.$('[data-share]');
@@ -1227,7 +1263,7 @@
     'period-add'() { periodSheet(); },
     'period-edit'(el) { periodSheet(el.dataset.id); },
     'period-len'(el) { setS({ periodLen: Math.max(2, Math.min(10, S().periodLen + Number(el.dataset.d))) }); },
-    'sync-now'() { Sync.run().then(() => toast(Sync.state === 'ok' ? '已同步' : '同步失敗：' + Sync.msg, Sync.state === 'ok' ? 'check' : null)); },
+    'sync-now'() { Sync.run(true).then(() => toast(Sync.state === 'ok' ? '已同步' : '同步失敗：' + Sync.msg, Sync.state === 'ok' ? 'check' : null)); },
     async 'sync-test'() {
       const u = document.getElementById('syncUrl').value.trim(), k = document.getElementById('syncKey').value;
       if (!u || !k) { toast('網址和密碼都要填'); return; }
@@ -1242,8 +1278,8 @@
         // 新的雲端：把本機所有資料推上去
         Object.keys(Store.s.records).forEach(id => Store.s.pending[id] = 1);
         Store.setDevice({ url: u, key: k, cursor: 0 });
-      }
-      await Sync.run();
+      } else Store.setDevice({ key: k });
+      await Sync.run(true);
       toast(Sync.state === 'ok' ? '已連接，開始同步' : '同步失敗：' + Sync.msg, 'cloud');
       Sync.startPolling();
       render();
@@ -1306,8 +1342,8 @@
         api.$('[data-ok]').onclick = () => { const v = api.$('[name=n]').value.trim(); if (!v) return; api.close(); finish(v); };
       });
     },
-    'join-retry'() { const j = pendingJoin(); if (j) startJoin(j); },
-    'join-cancel'() { sessionStorage.removeItem('us.join'); Store.setDevice({ url: '', key: '' }); render(); }
+    'join-retry'() { loadJoin(); },
+    'join-cancel'() { sessionStorage.removeItem('us.join'); if (!Store.device.me) Store.setDevice({ url: '', key: '' }); location.hash = Store.device.me ? '#/home' : '#/welcome'; render(); }
   };
 
   document.addEventListener('click', e => {
@@ -1317,6 +1353,7 @@
     ACT[el.dataset.act](el, e);
   });
   document.addEventListener('submit', e => {
+    if (e.target.closest('[data-form="join-pw"]')) { e.preventDefault(); submitJoinPw(); return; }
     const f = e.target.closest('[data-form="item-add"]');
     if (!f) return;
     e.preventDefault();
