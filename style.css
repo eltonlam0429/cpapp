@@ -642,3 +642,12 @@ details.hist summary::-webkit-details-marker { display: none; }
 .cal-day.today.period-pred .num { background: var(--btn-bg) !important; color: var(--btn-ink) !important; box-shadow: none; font-weight: 700; }
 .cal-day.today.sel .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--btn-bg); }
 .cal-day.sel .num { box-shadow: 0 0 0 2px var(--btn-bg); }
+
+/* ====== 垃圾筒 ====== */
+.trash-btn { position: relative; }
+.trash-btn .badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+.trash-bar { position: fixed; z-index: 35; left: 50%; transform: translate(-50%, 140%); bottom: calc(var(--safe-bot) + 92px); width: min(calc(100% - 28px), 520px);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 10px 10px 18px; border-radius: 22px; background: #fff; box-shadow: 0 10px 30px rgba(var(--shadow-rgb), .2); transition: transform .25s cubic-bezier(.2,.9,.25,1); }
+.trash-bar.show { transform: translate(-50%, 0); }
+.trash-bar .btn.sm { height: 38px; padding: 0 14px; }
+[data-sortable] > .dragging { z-index: 5; box-shadow: 0 10px 30px rgba(var(--shadow-rgb), .22); border-radius: 14px; background: #fff; transition: none; position: relative; }
