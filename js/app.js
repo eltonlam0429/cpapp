@@ -671,7 +671,7 @@
     const [ty, tm] = D.ymd(t);
     if (ty !== y || tm !== m) h += '<div class="center" style="margin-top:8px"><button class="link-btn small" data-act="cal-today">回到今天</button></div>';
     const male = S().male || 'a', female = male === 'a' ? 'b' : 'a';
-    h += '<div class="plegend"><span><i style="background:' + colorOf(male) + '"></i>' + esc(nm(male)) + '（男方）</span><span><i style="background:' + colorOf(female) + '"></i>' + esc(nm(female)) + '（女方）</span><span class="row" style="gap:5px">' + HEART + '一起</span></div>';
+    h += '<div class="plegend"><span><i style="background:' + colorOf(male) + '"></i>' + esc(nm(male)) + '</span><span><i style="background:' + colorOf(female) + '"></i>' + esc(nm(female)) + '</span><span class="row" style="gap:5px">' + HEART + '一起</span></div>';
     h += '</div>';
 
     // 選中的一天
@@ -938,7 +938,7 @@
     h += '<div class="section-h">我們</div><div class="glass card tight list">' +
       row({ act: 'names', ic: 'user', t: '我們的名字', s: esc(nm('a')) + ' &amp; ' + esc(nm('b')) }) +
       row({ act: 'whoami', ic: 'phone', t: '這部裝置是', s: esc(nm(me)) + ' · 每人可以用多部裝置' }) +
-      row({ act: 'gender', ic: 'user', t: '誰是男方、誰是女方', s: '男方：' + esc(nm(S().male || 'a')) + '（藍點）　女方：' + esc(nm((S().male || 'a') === 'a' ? 'b' : 'a')) + '（綠點）' }) +
+      row({ act: 'gender', ic: 'user', t: '男方 / 女方', s: '男方：' + esc(nm(S().male || 'a')) + '（藍）　女方：' + esc(nm((S().male || 'a') === 'a' ? 'b' : 'a')) + '（綠）' }) +
       row({ act: 'avatar', ic: 'image', t: '我的頭像', s: avatarPhoto(me) ? '已設定' : '還沒有上載' }) +
       row({ act: 'together', ic: 'heart', t: '在一起的日子', s: D.valid(s.together) ? D.ymdText(s.together) : '還沒有設定' }) +
       row({ act: 'birthday', ic: 'cake', t: '生日', s: [me, ot].map(w => esc(nm(w)) + '：' + (D.valid(s.birthday[w]) ? D.md(s.birthday[w]) : '未設定')).join('　') }) + '</div>';
@@ -1446,20 +1446,12 @@
     whoami: whoamiSheet,
     gender() {
       const male = S().male || 'a';
-      openSheet('<h2>男方 / 女方</h2><p class="small muted" style="margin-top:-8px">預設第一位是男方、第二位是女方。日曆上男方的活動是藍點，女方是綠點，一起的是心形。</p>' +
-        ['a', 'b'].map(w => '<div class="set-row"><div class="row" style="gap:10px">' + avatar(w, 'sm') + '<div><div class="small faint">' + (w === 'a' ? '第一位' : '第二位') + '</div><b>' + esc(nm(w)) + '</b></div></div>' +
-          '<div class="seg" style="width:150px" data-w="' + w + '"><button type="button" data-k="m" class="' + (male === w ? 'on' : '') + '">男方</button><button type="button" data-k="f" class="' + (male !== w ? 'on' : '') + '">女方</button></div></div>').join('') +
-        '<div class="actions"><button class="btn" data-x>完成</button></div>', api => {
-        api.$$('[data-w]').forEach(seg => seg.onclick = e => {
-          const b = e.target.closest('button'); if (!b) return;
-          const w = seg.dataset.w, newMale = b.dataset.k === 'm' ? w : (w === 'a' ? 'b' : 'a');
-          setS({ male: newMale });
-          api.$$('[data-w]').forEach(sg => sg.querySelectorAll('button').forEach(z => z.classList.toggle('on', (z.dataset.k === 'm') === (sg.dataset.w === newMale))));
-          toast('男方是 ' + nm(newMale) + '，女方是 ' + nm(newMale === 'a' ? 'b' : 'a'), 'check');
-        });
-        api.$('[data-x]').onclick = () => api.close();
+      openSheet('<h2>誰是男方？</h2><p class="small muted" style="margin-top:-8px">日曆上男方的活動是藍點，女方是綠點，一起的是心形。</p>' +
+        ['a', 'b'].map(w => '<button class="opt" data-w="' + w + '">' + avatar(w, 'sm') + '<span>' + esc(nm(w)) + '</span><span class="ck">' + (w === male ? icon('check') : '') + '</span></button>').join(''), api => {
+        api.$$('[data-w]').forEach(b => b.onclick = () => { setS({ male: b.dataset.w }); api.close(); toast('男方是 ' + nm(b.dataset.w), 'check'); });
       });
     },
+
     avatar: avatarSheet,
     theme: themeSheet,
     'check-update'() { if (App.update.available) updateSheet(); else checkUpdate(true); },
