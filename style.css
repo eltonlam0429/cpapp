@@ -605,3 +605,23 @@ details.hist summary::-webkit-details-marker { display: none; }
 .capsule.locked { background: repeating-linear-gradient(135deg, #fff 0 14px, rgba(var(--accent-rgb), .05) 14px 28px); }
 .vault-photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
 .vault-photos img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; }
+
+
+/* ====== v1.3：薄荷綠按鈕用 Pantone Green 0921 U（淺色，所以字用深綠） ====== */
+:root { --btn-bg: var(--accent); --btn-ink: #fff; --btn-shadow: rgba(var(--accent-rgb), .26); }
+:root[data-theme="mint"] { --btn-bg: #a7d6c4; --btn-ink: #1f4e41; --btn-shadow: rgba(110, 170, 148, .35); }
+.btn, .btn.fab { background: var(--btn-bg); color: var(--btn-ink); box-shadow: 0 6px 16px var(--btn-shadow); }
+.btn.ghost { color: var(--accent-deep); background: #fff; box-shadow: var(--glass-shadow); }
+.btn.soft { color: var(--accent-deep); background: var(--accent-soft); box-shadow: none; }
+.btn.danger { color: #fff; background: var(--danger); }
+.chip.on { background: var(--btn-bg); color: var(--btn-ink); box-shadow: 0 4px 12px var(--btn-shadow); }
+.chip.on .dot { background: var(--btn-ink) !important; }
+.avatar.f { background: linear-gradient(145deg, #c4e8da, #8cc9b2); }
+
+/* ====== 拖曳排序 ====== */
+.drag-handle { width: 40px; height: 40px; display: grid; place-items: center; color: var(--ink-3); touch-action: none; cursor: grab; flex: none; border-radius: 10px; }
+.drag-handle:active { background: rgba(var(--accent-rgb), .08); color: var(--accent-deep); }
+.tpl-row { background: #fff; position: relative; transition: box-shadow .15s; }
+.tpl-row.dragging { z-index: 5; box-shadow: 0 10px 30px rgba(var(--shadow-rgb), .22); border-radius: 14px; transition: none; }
+.tpl-row.dragging + .tpl-row { border-top-color: transparent; }
+[data-sortable] { overflow: visible; }
