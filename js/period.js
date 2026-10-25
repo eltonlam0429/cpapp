@@ -76,7 +76,7 @@
     const I = info(), t = D.today(), me = A.ME();
     const own = isOwner(I), edit = canEdit(I);
     const ownerName = A.nm(I.owner || me);
-    let h = A.head('經期', own ? '你的日子，和接下來的事。' : esc(ownerName) + ' 的日子，和接下來的事。', { back: true, right: '<button class="round-btn" data-act="p-settings" aria-label="設定">' + icon('sliders', 'sm') + '</button>' });
+    let h = A.head('經期', own ? '你的日子，和接下來的事。' : esc(ownerName) + ' 的日子，和接下來的事。', { back: true, trash: 'period', right: '<button class="round-btn" data-act="p-settings" aria-label="設定">' + icon('sliders', 'sm') + '</button>' });
     if (!canSee('dates', I)) {
       return h + '<div class="empty"><div class="bubble glass">' + icon('lock', 'lg') + '</div><h3>' + esc(ownerName) + ' 沒有分享</h3><p>對方可以在經期設定裏改。</p></div>';
     }

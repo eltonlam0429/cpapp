@@ -50,9 +50,18 @@
       return out;
     },
 
+    // 垃圾筒：不會自動清走，直到你自己永久刪除
     trash() {
-      const cutoff = Date.now() - 7 * 864e5;
-      return Object.values(this.s.records).filter(r => r.deleted && r.deleted > cutoff && !r.data._hidden);
+      return Object.values(this.s.records).filter(r => r.deleted && r.data && !r.data._hidden && !r.data._gone);
+    },
+    // 永久刪除：只留一個「已刪除」記號，讓另一部手機也知道
+    purge(id) {
+      const r = this.s.records[id];
+      if (!r) return;
+      r.deleted = r.deleted || Date.now();
+      r.data = { _gone: 1 };
+      r.updatedAt = Math.max(Date.now(), r.updatedAt + 1);
+      this.touch(id);
     },
 
     put(col, obj, id) {
@@ -101,16 +110,8 @@
       Sync.schedule();
     },
 
-    // 刪除超過 7 天的，從本機清走（雲端仍保留刪除記號）
-    cleanup() {
-      const cutoff = Date.now() - 7 * 864e5;
-      for (const id in this.s.records) {
-        const r = this.s.records[id];
-        if (r.deleted && r.deleted < cutoff && !this.s.pending[id]) {
-          r.data = { _gone: 1 };
-        }
-      }
-    },
+    // 垃圾筒的東西要等你永久刪除才會清走
+    cleanup() { /* 垃圾筒不再自動清除 */ },
 
     exportJSON() {
       const recs = Object.values(this.s.records);

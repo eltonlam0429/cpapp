@@ -2,7 +2,8 @@
 (function () {
   const A = window.App;
   A.forms = A.forms || {};
-  const ui = { doCat: 'all', showDoneDo: false, showPastTrips: false };
+  const ui = { doCat: 'all', doTab: 'do', showDoneDo: false, showPastTrips: false };
+  const DRAG_ICON = '<svg class="i" viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
   const delBtn = '<button class="btn ghost" data-del style="flex:0 0 auto;width:50px;padding:0;color:var(--danger)">' + icon('trash', 'sm') + '</button>';
   const checkBtn = (on, act, id) => '<button class="check' + (on ? ' on' : '') + '" data-act="' + act + '" data-id="' + id + '" aria-label="完成">' + icon('check', 'xs') + '</button>';
 
@@ -12,7 +13,11 @@
     const cats = doCats();
     const all = Store.all('dodo');
     const open = all.filter(x => !x.done), done = all.filter(x => x.done);
-    let h = A.head('一起做', '想一起看的、想一起去的、想一起做的。', { back: true });
+    let h = A.head('一起做', '想一起看的、想一起去的、想買的，還有你們的清單。', { trash: 'dolist' });
+    const nLists = Store.all('list').length, nWish = Store.all('wish').filter(w => !w.done).length;
+    h += '<div class="seg" style="margin-bottom:16px">' + [['do', '想做的事 ' + (open.length || '')], ['lists', '清單 ' + (nLists || '')], ['wishes', '願望 ' + (nWish || '')]].map(([k, n]) => '<button data-act="do-tab" data-k="' + k + '" class="' + (ui.doTab === k ? 'on' : '') + '">' + n.trim() + '</button>').join('') + '</div>';
+    if (ui.doTab === 'lists') return h + A.listsBody();
+    if (ui.doTab === 'wishes') return h + A.wishesBody();
     h += '<div class="chips" style="margin-bottom:16px"><button class="chip' + (ui.doCat === 'all' ? ' on' : '') + '" data-act="do-cat" data-k="all">全部</button>' +
       cats.map(c => { const n = open.filter(x => x.cat === c.k).length; return '<button class="chip' + (ui.doCat === c.k ? ' on' : '') + '" data-act="do-cat" data-k="' + c.k + '">' + c.e + ' ' + esc(c.n) + (n ? ' <span style="opacity:.6">' + n + '</span>' : '') + '</button>'; }).join('') +
       '<button class="chip add" data-act="do-newcat">' + icon('plus', 'xs') + '自訂</button></div>';
@@ -95,7 +100,7 @@
     const t = D.today();
     const trips = Store.all('trip').sort((a, b) => a.start < b.start ? -1 : 1);
     const up = trips.filter(x => (x.end || x.start) >= t), past = trips.filter(x => (x.end || x.start) < t).reverse();
-    let h = A.head('旅行清單', '每次旅行一張清單，執行李時逐項剔。', { back: true, right: '<a href="#/triptpl" class="round-btn" aria-label="清單範本">' + icon('sliders', 'sm') + '</a>' });
+    let h = A.head('旅行清單', '每次旅行一張清單，執行李時逐項剔。', { back: true, trash: 'trips', right: '<a href="#/triptpl" class="round-btn" aria-label="清單範本">' + icon('sliders', 'sm') + '</a>' });
     const card = tr => {
       const its = tripItems(tr.id), n = its.filter(i => i.done).length;
       return '<a href="#/trip/' + tr.id + '" class="glass card" style="display:block"><div class="row between"><b style="font-size:18px">' + esc(tr.name) + '</b><span class="tag' + (tripStatus(tr) === '去過了' ? ' gray' : '') + '">' + tripStatus(tr) + '</span></div>' +
@@ -128,7 +133,7 @@
       };
       if (id) api.$('[data-del]').onclick = async () => {
         api.close();
-        if (!(await confirmSheet('刪除「' + x.name + '」？', '清單也會一起刪除，7 天內可以還原。', '刪除', true))) return;
+        if (!(await confirmSheet('刪除「' + x.name + '」？', '清單會一起移到垃圾筒，可以復原。', '刪除', true))) return;
         tripItems(id).forEach(i => Store.remove(i.id, { silent: true }));
         Store.remove(id); location.hash = '#/trips';
       };
@@ -138,9 +143,9 @@
     const tr = Store.get(id);
     if (!tr) return A.head('旅行', '', { back: true }) + A.emptyHTML('flag', '找不到這次旅行', '可能已經被刪除了。');
     const its = tripItems(id), n = its.filter(i => i.done).length;
-    let h = A.head(esc(tr.name), dateRange(tr) + ' · ' + tripStatus(tr), { back: true, right: '<button class="round-btn" data-act="trip-edit" data-id="' + id + '" aria-label="修改">' + icon('pencil', 'sm') + '</button>' });
-    h += '<div class="glass card"><div class="row between"><b>執好 ' + n + ' / ' + its.length + '</b>' + (n ? '<button class="link-btn small" data-act="trip-uncheck" data-id="' + id + '">全部取消勾選</button>' : '') + '</div><div class="progress"><i style="width:' + (its.length ? Math.round(n * 100 / its.length) : 0) + '%"></i></div><div class="small faint" style="margin-top:8px">不用全部勾選，用得着的剔就可以。按項目可以修改或刪除。</div></div>';
-    h += '<div class="glass card tight list">' + (its.length ? its.map(i => '<div class="li">' + checkBtn(i.done, 'tci-toggle', i.id) + '<button class="grow" style="text-align:left" data-act="tci-edit" data-id="' + i.id + '"><span class="' + (i.done ? 'done-text' : '') + '">' + esc(i.t) + '</span></button></div>').join('') : '<div class="muted small" style="padding:14px 16px">清單是空的，在下面加。</div>') + '</div>';
+    let h = A.head(esc(tr.name), dateRange(tr) + ' · ' + tripStatus(tr), { back: true, trash: 'trips', right: '<button class="round-btn" data-act="trip-edit" data-id="' + id + '" aria-label="修改">' + icon('pencil', 'sm') + '</button>' });
+    h += '<div class="glass card"><div class="row between"><b>執好 ' + n + ' / ' + its.length + '</b>' + (n ? '<button class="link-btn small" data-act="trip-uncheck" data-id="' + id + '">全部取消勾選</button>' : '') + '</div><div class="progress"><i style="width:' + (its.length ? Math.round(n * 100 / its.length) : 0) + '%"></i></div><div class="small faint" style="margin-top:8px">不用全部勾選，用得着的剔就可以。按項目可以修改或刪除；按住右邊的 ≡ 可以拖曳排序。</div></div>';
+    h += '<div class="glass card tight list" data-sortable="tci">' + (its.length ? its.map(i => '<div class="li" data-id="' + i.id + '" style="padding-right:6px">' + checkBtn(i.done, 'tci-toggle', i.id) + '<button class="grow" style="text-align:left" data-act="tci-edit" data-id="' + i.id + '"><span class="' + (i.done ? 'done-text' : '') + '">' + esc(i.t) + '</span></button><span class="drag-handle" aria-label="拖曳排序">' + DRAG_ICON + '</span></div>').join('') : '<div class="muted small" style="padding:14px 16px">清單是空的，在下面加。</div>') + '</div>';
     h += '<div class="glass card" style="padding:8px 8px 8px 16px"><form class="row" data-form="tci-add" data-id="' + id + '"><input class="field grow" data-live name="t" placeholder="加一項…" maxlength="120" style="background:transparent;border:0;box-shadow:none;padding:10px 0"><button class="btn sm" type="submit" style="padding:0 14px" aria-label="加">' + icon('plus', 'sm') + '</button></form></div>';
     return h;
   }
@@ -153,7 +158,6 @@
       if (onDelete) api.$('[data-del]').onclick = () => { onDelete(); api.close(); };
     });
   }
-  const DRAG_ICON = '<svg class="i" viewBox="0 0 24 24"><path d="M5 8h14M5 12h14M5 16h14"/></svg>';
   function pageTripTpl() {
     const items = tplItems();
     let h = A.head('清單範本', '新的旅行會用這張清單。改了不會影響已經建立的旅行。', { back: true });
@@ -173,7 +177,7 @@
     const t = D.today();
     const all = Store.all('capsule').sort((a, b) => a.openOn < b.openOn ? -1 : 1);
     const sealed = all.filter(c => c.openOn > t), opened = all.filter(c => c.openOn <= t).reverse();
-    let h = A.head('時間囊', '到你們選的那一天才打開的信。', { back: true });
+    let h = A.head('時間囊', '到你們選的那一天才打開的信。', { back: true, trash: 'capsule' });
     if (!all.length) h += A.emptyHTML('lock', '還沒有一封信。', '今天寫點甚麼，一年後再讀。');
     if (opened.length) h += '<div class="label">可以讀了</div>' + opened.map(c => '<button class="glass card" style="display:block;width:100%;text-align:left" data-act="cap-read" data-id="' + c.id + '"><div class="row between"><b style="font-size:17px">' + icon('hourglass', 'xs') + ' ' + esc(c.title) + '</b>' + A.avatar(c._by || A.ME(), 'xs') + '</div><div class="small muted" style="margin-top:4px">' + D.ymdText(c.created || t) + ' 寫 · ' + D.ymdText(c.openOn) + ' 打開</div><div class="small" style="margin-top:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + esc(c.body) + '</div></button>').join('');
     if (sealed.length) h += '<div class="label">封存中</div>' + sealed.map(c => '<button class="glass card capsule locked" style="display:block;width:100%;text-align:left" data-act="cap-sealed" data-id="' + c.id + '"><div class="row between"><b style="font-size:17px">' + icon('lock', 'xs') + ' ' + esc(c.title) + '</b>' + A.avatar(c._by || A.ME(), 'xs') + '</div><div class="small muted" style="margin-top:6px">' + D.ymdText(c.openOn) + ' 才可以打開 · 還有 ' + D.diff(t, c.openOn) + ' 天</div></button>').join('');
@@ -237,7 +241,7 @@
     return null;
   }
   function pageVault() {
-    let h = A.head('保險箱', '只有你們兩個看到的文件', { back: true, right: vKey ? '<button class="round-btn" data-act="vault-lock" aria-label="鎖上">' + icon('lock', 'sm') + '</button>' : '' });
+    let h = A.head('保險箱', '只有你們兩個看到的文件', { back: true, trash: vKey ? 'vault' : '', right: vKey ? '<button class="round-btn" data-act="vault-lock" aria-label="鎖上">' + icon('lock', 'sm') + '</button>' : '' });
     h += '<div class="hint-bar">' + icon('shield', 'xs') + ' 請不要把信用卡號碼、網上銀行密碼這類重要資料放在這裏。</div>';
     if (vKey && Date.now() - vAt > 5 * 60000) lockVault();
     if (!vKey) {
@@ -285,7 +289,7 @@
       api.$('[data-edit]').onclick = () => { api.close(); vaultEdit(id, v, photos); };
       api.$('[data-del]').onclick = async () => {
         api.close();
-        if (!(await confirmSheet('刪除「' + v.title + '」？', '7 天內可以在「最近刪除」還原。', '刪除', true))) return;
+        if (!(await confirmSheet('刪除「' + v.title + '」？', '會移到垃圾筒，可以復原。', '刪除', true))) return;
         files.forEach(f => Store.remove(f.id, { silent: true })); Store.remove(id);
       };
     });
@@ -329,6 +333,7 @@
   /* ================= 登記 ================= */
   Object.assign(A.pages, { dolist: pageDo, trips: pageTrips, trip: pageTrip, triptpl: pageTripTpl, capsule: pageCapsule, vault: pageVault });
   Object.assign(A.acts, {
+    'do-tab'(el) { ui.doTab = el.dataset.k; A.render(); },
     'do-cat'(el) { ui.doCat = el.dataset.k; A.render(); },
     'do-newcat'() { const c = newCat(); if (c) { ui.doCat = c.k; A.render(); } },
     'do-new'() { doSheet(); },
@@ -365,7 +370,8 @@
   const optional = t => /如適用/.test(t);
   /* ---------- 拖曳排序（按住 ≡ 上下拖） ---------- */
   const SORTERS = {
-    tpl(ids) { const map = {}; tplItems().forEach(i => map[i.id] = i); saveTpl(ids.map(id => map[id]).filter(Boolean)); }
+    tpl(ids) { const map = {}; tplItems().forEach(i => map[i.id] = i); saveTpl(ids.map(id => map[id]).filter(Boolean)); },
+    tci(ids) { ids.forEach((id, i) => { const x = Store.get(id); if (x && x.order !== (i + 1) * 10) Store.patch(id, { order: (i + 1) * 10 }); }); }
   };
   let drag = null;
   document.addEventListener('pointerdown', e => {

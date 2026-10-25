@@ -26,7 +26,7 @@
     const me = A.ME(), ot = A.OT();
     const who = ui.knowWho === 'me' ? me : ot;
     const items = Store.all('know').filter(x => x.who === who).map(kNorm).sort((a, b) => kOrder(a) - kOrder(b) || (a._at || 0) - (b._at || 0));
-    let h = A.head('要知道的事', '尺碼、喜好，還有不喜歡的', { back: true });
+    let h = A.head('要知道的事', '尺碼、喜好，還有不喜歡的', { back: true, trash: 'know' });
     h += '<div class="hint-bar">兩個人都可以填，也可以幫對方填和改。</div>';
     h += '<div class="seg" style="margin-bottom:16px"><button data-act="know-who" data-k="me" class="' + (who === me ? 'on' : '') + '">關於 ' + esc(A.nm(me)) + '</button><button data-act="know-who" data-k="ot" class="' + (who === ot ? 'on' : '') + '">關於 ' + esc(A.nm(ot)) + '</button></div>';
     if (!items.length) {
@@ -83,7 +83,7 @@
     const plans = Store.all('plan');
     const open = ui.planTab === 'open';
     const shown = plans.filter(p => !!p.ended !== open).sort((a, b) => (b._at || 0) - (a._at || 0));
-    let h = A.head('計劃', '一個目標、已經存了多少、還差多少。', { back: true });
+    let h = A.head('計劃', '一個目標、已經存了多少、還差多少。', { back: true, trash: 'plans' });
     h += '<div class="chips" style="margin-bottom:16px"><button class="chip' + (open ? ' on' : '') + '" data-act="plan-tab" data-k="open">計劃</button><button class="chip' + (!open ? ' on' : '') + '" data-act="plan-tab" data-k="ended">已結束</button></div>';
     if (!shown.length) {
       h += open ? A.emptyHTML('card', '還沒有任何計劃。', '一趟旅行、一件傢具、一次維修：寫下金額，開始存。')
@@ -127,7 +127,7 @@
       };
       if (id) api.$('[data-del]').onclick = async () => {
         api.close();
-        if (!(await confirmSheet('刪除這個計劃？', '存款紀錄也會一起刪除，7 天內可以還原。', '刪除', true))) return;
+        if (!(await confirmSheet('刪除這個計劃？', '存款紀錄會一起移到垃圾筒，可以復原。', '刪除', true))) return;
         Store.all('dep').filter(d => d.planId === id).forEach(d => Store.remove(d.id, { silent: true }));
         Store.remove(id);
       };
@@ -162,7 +162,7 @@
   /* ================= 筆記 ================= */
   function pageJots() {
     const jots = Store.all('jot').sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || (b._at || 0) - (a._at || 0));
-    let h = A.head('筆記', '你們兩個的本子：待辦事項和重要日子以外的一切。', { back: true });
+    let h = A.head('筆記', '你們兩個的本子：待辦事項和重要日子以外的一切。', { back: true, trash: 'jots' });
     if (!jots.length) h += A.emptyHTML('note', '本子還是空的。', '一個主意、腦裏的一張清單、醫生說過的話：放在這裏不礙着誰。');
     else h += jots.map(j => {
       const first = (j.title || (j.body || '').split('\n')[0] || '（沒有標題）').slice(0, 60);
@@ -186,7 +186,7 @@
         Store.put('jot', Object.assign({}, x, { title, body, pin: api.$('[name=pin]').checked, created: x.created || D.today() }), id);
         api.close();
       };
-      if (id) api.$('[data-del]').onclick = () => { Store.remove(id); api.close(); toast('已刪除，可以在「最近刪除」還原', 'trash'); };
+      if (id) api.$('[data-del]').onclick = () => { Store.remove(id); api.close(); toast('已移到垃圾筒', 'trash'); };
     });
   }
 
