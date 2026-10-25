@@ -635,3 +635,10 @@ details.hist summary::-webkit-details-marker { display: none; }
 .cal-day.today.sel .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--btn-bg); }
 .months button.on { background: var(--btn-bg); color: var(--btn-ink); }
 .plegend .hrt { width: 11px; height: 11px; display: inline-block; }
+
+/* v1.7：今天的實心圓永遠跟按鈕同色（包括經期中的今天），不要漸層和反光 */
+.cal-day.today .num,
+.cal-day.today.period .num,
+.cal-day.today.period-pred .num { background: var(--btn-bg) !important; color: var(--btn-ink) !important; box-shadow: none; font-weight: 700; }
+.cal-day.today.sel .num { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--btn-bg); }
+.cal-day.sel .num { box-shadow: 0 0 0 2px var(--btn-bg); }
