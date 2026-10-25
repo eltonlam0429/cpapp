@@ -24,14 +24,14 @@
   <nav class="tabbar" id="tabbar">
     <a href="#/home" data-tab="home"><svg class="i" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></svg>主頁</a>
     <a href="#/todo" data-tab="todo"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>待辦事項</a>
-    <a href="#/lists" data-tab="lists"><svg class="i" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>清單</a>
+    <a href="#/dolist" data-tab="lists"><svg class="i" viewBox="0 0 24 24"><path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5zM16 10h1.5a2.5 2.5 0 0 1 0 5H16M9 3v3M12 3v3"/></svg>一起做</a>
     <a href="#/calendar" data-tab="calendar"><svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>日曆</a>
     <a href="#/profile" data-tab="profile"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>個人檔案</a>
   </nav>
   <script>
     /* 載入器：先讀 version.json，用版本號載入檔案，確保更新後拿到新檔案 */
     (function () {
-      var FILES = ['style.css', 'js/data.js', 'js/nlp.js', 'js/ui.js', 'js/store.js', 'js/period.js', 'js/extras.js', 'js/more.js', 'js/app.js'];
+      var FILES = ['style.css', 'js/data.js', 'js/nlp.js', 'js/ui.js', 'js/store.js', 'js/period.js', 'js/extras.js', 'js/more.js', 'js/trash.js', 'js/app.js'];
       function load(v) {
         window.APP_VERSION = v;
         FILES.forEach(function (f) {
