@@ -651,3 +651,24 @@ details.hist summary::-webkit-details-marker { display: none; }
 .trash-bar.show { transform: translate(-50%, 0); }
 .trash-bar .btn.sm { height: 38px; padding: 0 14px; }
 [data-sortable] > .dragging { z-index: 5; box-shadow: 0 10px 30px rgba(var(--shadow-rgb), .22); border-radius: 14px; background: #fff; transition: none; position: relative; }
+
+/* ====== v1.9 經期：時間表、統計 ====== */
+.pbar i { opacity: 1; }
+.ptl { margin-top: 14px; border-radius: 16px; background: rgba(var(--accent-rgb), .04); padding: 4px 12px; }
+.ptl-row { display: grid; grid-template-columns: 12px 64px 1fr auto; gap: 10px; align-items: center; padding: 9px 0; font-size: 14px; color: var(--ink-2); }
+.ptl-row + .ptl-row { border-top: 1px solid var(--line); }
+.ptl-row i { width: 11px; height: 11px; border-radius: 50%; }
+.ptl-row .pl { color: var(--ink-3); font-size: 13px; }
+.ptl-row.on { color: var(--ink); font-weight: 700; }
+.ptl-row.on .pl { color: var(--ink-2); }
+.pstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.pstat { padding: 12px 10px; border-radius: 14px; background: rgba(var(--accent-rgb), .06); display: flex; flex-direction: column; gap: 2px; }
+.pstat b { font-size: 18px; }
+.pstat span { font-size: 12px; color: var(--ink-2); }
+.pbars { display: flex; gap: 8px; align-items: flex-end; height: 110px; }
+.pbars > div { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; }
+.pbars i { width: 100%; max-width: 28px; border-radius: 8px 8px 4px 4px; background: #e0567f; }
+.pbars em { font-style: normal; font-size: 12px; color: var(--ink-2); }
+.pd.b-pred .band { background: rgba(224,86,127,.22); }
+.pd.b-fertile .band { background: rgba(139,108,240,.24); }
+.pd.b-ovu .num { box-shadow: inset 0 0 0 2px #8b6cf0; }
