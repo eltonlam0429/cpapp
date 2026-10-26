@@ -1,29 +1,52 @@
 /* 經期：記錄、推算四個時期、月曆橫條、感覺記錄、分享設定 */
 (function () {
   const A = window.App;
+  // 四個時期：進度條、圖例圓點、圓圈、時間表都用同一個顏色
   const PH = {
-    men: { n: '月經', c1: '#f39a7b', c2: '#e0567f', desc: '這時候想暖一點、想休息，不是任性。', tip: '準備暖飲和熱水袋，多點體諒和陪伴。' },
-    fol: { n: '濾泡期', c1: '#f8d5b0', c2: '#f0a96e', desc: '精神慢慢回來，適合計劃新事情。', tip: '通常比較有精神，可以約去做想做的事。' },
-    ovu: { n: '排卵期', c1: '#c7b3ff', c2: '#8b6cf0', desc: '精力和心情通常最好的幾天。', tip: '心情通常不錯，很適合約會。' },
-    lut: { n: '黃體期', c1: '#d6deec', c2: '#9fb0cc', desc: '可能容易累或情緒起伏，對自己溫柔一點。', tip: '可能比較容易累或敏感，多點耐心和關心。' }
+    men: { n: '月經', c: '#e0567f', desc: '這時候想暖一點、想休息，不是任性。', tip: '準備暖飲和熱水袋，多點體諒和陪伴。' },
+    fol: { n: '濾泡期', c: '#f2a93b', desc: '精神慢慢回來，適合計劃新事情。', tip: '通常比較有精神，可以約去做想做的事。' },
+    ovu: { n: '排卵期', c: '#8b6cf0', desc: '精力和心情通常最好的幾天。', tip: '心情通常不錯，很適合約會。' },
+    lut: { n: '黃體期', c: '#3fb0c6', desc: '可能容易累或情緒起伏，對自己溫柔一點。', tip: '可能比較容易累或敏感，多點耐心和關心。' }
   };
+  const LUTEAL = 14; // 黃體期通常很穩定，大約 14 天；排卵日 = 下次經期前 14 天
   const SYM = ['腹痛', '腰痛', '頭痛', '胸脹', '腹脹', '痘痘', '疲倦', '失眠', '想吃甜'];
   const MOOD = ['開心', '平靜', '有活力', '敏感', '煩躁', '低落', '焦慮', '想被抱'];
   const FLOW = [['', '沒有'], ['l', '少'], ['m', '中'], ['h', '多']];
+  const median = a => { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
+  /* 根據記錄自動估算：
+     - 週期：最近 6 個正常週期的加權平均（越近越重要），太長或太短的（例如漏記了一次）不計入
+     - 經期長度：有記錄結束日的那幾次的平均；未有就用設定
+     - 排卵日：下次經期前 14 天；易孕期：排卵日前 5 天到後 1 天 */
   function info() {
     const s = A.S();
     const recs = Store.all('period').filter(p => D.valid(p.start)).sort((a, b) => a.start < b.start ? -1 : 1);
-    const len = s.periodLen || 5;
     const gaps = [];
-    for (let i = 1; i < recs.length; i++) { const g = D.diff(recs[i - 1].start, recs[i].start); if (g >= 18 && g <= 60) gaps.push(g); }
-    const recent = gaps.slice(-6);
-    const cycle = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : 28;
+    for (let i = 1; i < recs.length; i++) { const g = D.diff(recs[i - 1].start, recs[i].start); if (g >= 15 && g <= 90) gaps.push({ id: recs[i - 1].id, g }); }
+    const med = median(gaps.map(x => x.g));
+    const good = gaps.filter(x => Math.abs(x.g - med) <= 10 && x.g >= 18 && x.g <= 60);
+    const recent = good.slice(-6);
+    let cycle = 28;
+    if (recent.length) { let sw = 0, sg = 0; recent.forEach((x, i) => { const w = i + 1; sw += w; sg += x.g * w; }); cycle = Math.round(sg / sw); }
+    const lens = recs.filter(r => D.valid(r.end) && r.end >= r.start).map(r => D.diff(r.start, r.end) + 1).filter(n => n >= 1 && n <= 15);
+    const recentLens = lens.slice(-6);
+    const len = recentLens.length ? Math.round(recentLens.reduce((a, b) => a + b, 0) / recentLens.length) : (s.periodLen || 5);
     const last = recs[recs.length - 1] || null;
     const next = last ? D.add(last.start, cycle) : null;
     const owner = s.periodWho === 'a' || s.periodWho === 'b' ? s.periodWho : 'b'; // 預設：第二位，可以在經期設定改
     const share = s.periodShare || 'all';
-    return { recs, len, cycle, last, next, owner, share, avgReal: recent.length > 0 };
+    const gs = good.map(x => x.g);
+    const mean = gs.length ? gs.reduce((a, b) => a + b, 0) / gs.length : 0;
+    const sd = gs.length > 1 ? Math.sqrt(gs.reduce((a, g) => a + (g - mean) * (g - mean), 0) / (gs.length - 1)) : 0;
+    const stat = {
+      n: recs.length, cycles: gaps.length, used: good.length,
+      avg: gs.length ? Math.round(mean * 10) / 10 : null,
+      min: gs.length ? Math.min(...gs) : null,
+      max: gs.length ? Math.max(...gs) : null,
+      sd, avgLen: lens.length ? Math.round(lens.reduce((a, b) => a + b, 0) / lens.length * 10) / 10 : null,
+      goodIds: new Set(good.map(x => x.id)), gaps
+    };
+    return { recs, len, cycle, last, next, owner, share, avgReal: recent.length > 0, lenReal: recentLens.length > 0, stat };
   }
   const isOwner = I => !I.owner || I.owner === A.ME();
   // 兩個人都可以記錄和修改（除非她選了不分享）；私人筆記只有本人看到
@@ -55,7 +78,7 @@
       if (c.start > to) break;
       const cl = D.diff(c.start, nx);
       const pe = c.end < nx ? c.end : D.add(nx, -1);
-      let ov = D.add(nx, -14);
+      let ov = D.add(nx, -LUTEAL);
       if (ov <= D.add(pe, 1)) ov = D.add(c.start, Math.max(D.diff(c.start, pe) + 2, Math.floor(cl / 2)));
       const fs = D.add(ov, -5), fe = D.add(ov, 1);
       for (let d = c.start > from ? c.start : from; d < nx && d <= to; d = D.add(d, 1)) {
@@ -82,7 +105,7 @@
     }
     if (!I.last) {
       h += '<div class="glass card hero" style="padding:24px"><div class="q-title" style="margin-top:0">' + (own ? '你還沒記下甚麼。' : '還沒有記錄。') + '</div><div class="muted">' + (own ? '標記經期開始的那天，其餘的會自己排好。' : esc(ownerName) + ' 記錄之後，這裏就會出現。') + '</div>' +
-        (edit ? '<div class="hero-actions"><button class="btn sm" data-act="p-start-today">經期今天開始了</button><button class="btn ghost sm" data-act="p-add">選另一天</button></div>' : '') + '</div>';
+        (edit ? '<div class="hero-actions"><button class="btn sm" data-act="p-start-today">經期今天開始了</button><button class="btn ghost sm" data-act="p-add">選另一天</button></div><div class="center" style="margin-top:10px"><button class="link-btn small" data-act="p-bulk">' + icon('plus', 'xs') + '補記過往記錄</button></div>' : '') + '</div>';
       return h + calendarCard(I);
     }
     const map = dayMap(t, t, I);
@@ -102,25 +125,33 @@
       h += '<div class="glass card" style="padding:20px">' +
         '<div class="small muted">今天 · ' + D.md(t) + '</div>' +
         '<div class="row" style="gap:16px;margin-top:10px;align-items:flex-start">' +
-        '<div class="pcircle" style="background:linear-gradient(145deg,' + ph.c1 + ',' + ph.c2 + ')"><b>' + x.cday + '</b><span>天</span></div>' +
+        '<div class="pcircle" style="background:linear-gradient(145deg,rgba(255,255,255,.28),rgba(255,255,255,0)),' + ph.c + ';box-shadow:0 10px 24px ' + ph.c + '40"><b>' + x.cday + '</b><span>天</span></div>' +
         '<div class="grow"><div style="font-size:22px;font-weight:750">' + title + '</div><div class="muted small" style="margin-top:4px">' + desc + '</div>' +
         (edit ? '<button class="link-btn small" style="margin-top:8px;color:#c0367f" data-act="p-mood" data-k="' + t + '">' + (lg ? '改今天的感覺' : own ? '記下我的感覺' : '幫 ' + esc(ownerName) + ' 記下感覺') + icon('chevR', 'xs') + '</button>' : '') + '</div></div>' +
-        phaseBar(x) +
+        phaseBar(x) + timeline(x, t) +
         (lg && canSee('all', I) ? '<div style="margin-top:12px">' + logChips(lg, own) + '</div>' : '') +
         '<hr style="border:0;height:1px;background:var(--line);margin:16px 0 8px">' +
         '<div class="set-row"><span class="muted">下次經期</span><b>' + (daysToNext > 0 ? daysToNext + ' 天後' : '今天') + '</b></div>' +
         '<div class="set-row"><span class="muted">大約</span><span>' + D.md(x.nx) + ' 週' + D.WD[D.dow(x.nx)] + '</span></div>' +
-        '<div class="set-row"><span class="muted">平均週期</span><span>' + I.cycle + ' 天' + (I.avgReal ? '' : '（預設）') + '</span></div>' +
+        '<div class="set-row"><span class="muted">估算週期</span><span>' + I.cycle + ' 天' + (I.avgReal ? '' : '（預設，記錄兩次後自動計算）') + '</span></div>' +
+        '<div class="set-row"><span class="muted">估算經期長度</span><span>' + I.len + ' 天' + (I.lenReal ? '' : '（設定值）') + '</span></div>' +
         (edit ? '<div class="hero-actions">' + (inOpen ? '<button class="btn sm" data-act="p-end-today" data-id="' + curRec.id + '">經期結束了</button>' : x.phase === 'men' && x.c.rec ? '' : '<button class="btn sm" data-act="p-start-today">經期今天開始了</button>') + '<button class="btn ghost sm" data-act="p-add">記錄另一天</button></div>' : '') +
         '</div>';
     }
     h += '<div class="hint-bar">這是根據以前的週期推算的。不能用作避孕方法。</div>';
     h += calendarCard(I);
-    h += '<div class="section-h">之前的記錄</div><div class="glass card tight list no-icon">' + I.recs.slice().reverse().map((r, i, arr) => {
-      const prev = arr[i + 1];
+    h += statsCard(I);
+    const desc = I.recs.slice().sort((a, b) => a.start < b.start ? 1 : -1); // 最新在最上面
+    h += '<div class="section-h">之前的記錄' + (edit ? '<button class="link-btn small" data-act="p-bulk">' + icon('plus', 'xs') + '補記過往記錄</button>' : '') + '</div>';
+    h += '<div class="glass card tight list no-icon">' + desc.map((r, i) => {
+      const newer = desc[i - 1];
       const len = r.end ? D.diff(r.start, r.end) + 1 : null;
-      const s = [len ? len + ' 天' : '沒有記錄結束', prev ? '週期 ' + D.diff(prev.start, r.start) + ' 天' : ''].filter(Boolean).join(' · ');
-      return edit ? A.row({ act: 'p-edit', id: r.id, t: D.ymdText(r.start) + (r.end ? ' – ' + D.md(r.end) : ''), s }) : A.row({ t: D.ymdText(r.start), s, noChev: true });
+      let cyc;
+      if (newer) { const g = D.diff(r.start, newer.start); cyc = '週期 ' + g + ' 天' + (I.stat.goodIds.has(r.id) ? '' : '（不尋常，不計入估算）'); }
+      else cyc = '這個週期第 ' + (D.diff(r.start, t) + 1) + ' 天';
+      const s = [len ? '經期 ' + len + ' 天' : '沒有記錄結束', cyc].join(' · ');
+      const ttl = D.ymdText(r.start) + (r.end ? ' – ' + D.md(r.end) : '');
+      return edit ? A.row({ act: 'p-edit', id: r.id, t: ttl, s }) : A.row({ t: ttl, s, noChev: true });
     }).join('') + '</div>' + (edit ? '<p class="small faint" style="margin:-4px 4px 14px">輸入錯了？按記錄就可以改開始和結束的日子，或者刪除。</p>' : '');
     return h;
   }
@@ -131,9 +162,47 @@
     const ovu = D.diff(x.fs, x.fe) + 1;
     const lut = Math.max(0, cl - men - fol - ovu);
     const pos = Math.min(99, Math.max(1, (x.cday - 0.5) / cl * 100));
-    const seg = (k, n) => n > 0 ? '<i style="flex:' + n + ';background:' + (k === x.phase ? PH[k].c2 : PH[k].c1) + '"></i>' : '';
+    const seg = (k, n) => n > 0 ? '<i style="flex:' + n + ';background:' + PH[k].c + (k === x.phase ? '' : ';opacity:.85') + '"></i>' : '';
     return '<div class="pbar">' + seg('men', men) + seg('fol', fol) + seg('ovu', ovu) + seg('lut', lut) + '<span class="pmark" style="left:' + pos + '%"></span></div>' +
-      '<div class="plegend4">' + ['men', 'fol', 'ovu', 'lut'].map(k => '<span' + (k === x.phase ? ' class="on"' : '') + '><i style="background:' + PH[k].c2 + '"></i>' + PH[k].n + '</span>').join('') + '</div>';
+      '<div class="plegend4">' + ['men', 'fol', 'ovu', 'lut'].map(k => '<span' + (k === x.phase ? ' class="on"' : '') + '><i style="background:' + PH[k].c + '"></i>' + PH[k].n + '</span>').join('') + '</div>';
+  }
+  // 這個週期每個時期由幾時到幾時
+  function timeline(x, t) {
+    const rng = (a, b) => a > b ? null : [a, b];
+    const rows = [
+      ['men', rng(x.c.start, x.pe)],
+      ['fol', rng(D.add(x.pe, 1), D.add(x.fs, -1))],
+      ['ovu', rng(x.fs > D.add(x.pe, 1) ? x.fs : D.add(x.pe, 1), x.fe)],
+      ['lut', rng(D.add(x.fe, 1), D.add(x.nx, -1))]
+    ].filter(r => r[1]);
+    const fmt = d => D.md(d);
+    let h = '<div class="ptl">' + rows.map(([k, [a, b]]) => {
+      const n = D.diff(a, b) + 1, cur = t >= a && t <= b;
+      return '<div class="ptl-row' + (cur ? ' on' : '') + '"><i style="background:' + PH[k].c + '"></i><span class="pn">' + PH[k].n + '</span><span class="pd2">' + fmt(a) + (a !== b ? ' – ' + fmt(b) : '') + '</span><span class="pl">' + n + ' 天</span></div>';
+    }).join('') + '</div>';
+    h += '<div class="small muted" style="margin-top:6px">' + icon('spark', 'xs') + ' 排卵日大約 ' + D.md(x.ov) + ' 週' + D.WD[D.dow(x.ov)] + (x.c.rec ? '' : '（預計）') + '</div>';
+    return h;
+  }
+  function statsCard(I) {
+    const st = I.stat;
+    if (st.n < 2) return '<div class="glass card"><b>統計</b><div class="small muted" style="margin-top:6px">記錄兩次或以上就會顯示平均週期、最長和最短週期。可以用「補記過往記錄」一次過輸入以前的日子。</div></div>';
+    const reg = st.used < 2 ? '' : st.sd <= 2 ? '很規律' : st.sd <= 4 ? '大致規律' : '不太規律';
+    const tile = (v, l) => '<div class="pstat"><b>' + v + '</b><span>' + l + '</span></div>';
+    let h = '<div class="glass card"><div class="row between"><b>統計</b><span class="small muted">' + st.n + ' 次記錄 · ' + st.cycles + ' 個週期</span></div><div class="pstats">' +
+      tile(st.avg != null ? st.avg + ' 天' : '—', '平均週期') +
+      tile(st.min != null ? st.min + ' 天' : '—', '最短週期') +
+      tile(st.max != null ? st.max + ' 天' : '—', '最長週期') +
+      tile(st.avgLen != null ? st.avgLen + ' 天' : '—', '平均經期') +
+      tile(reg ? reg : '—', '規律程度' + (reg ? '（±' + Math.round(st.sd * 10) / 10 + ' 天）' : '')) +
+      tile(I.cycle + ' 天', '下次估算用') + '</div>' +
+      (st.cycles > st.used ? '<div class="small faint" style="margin-top:8px">有 ' + (st.cycles - st.used) + ' 個不尋常的週期（例如漏記了一次）沒有計入，灰色顯示。</div>' : '');
+    // 最近 8 個週期的長度
+    const g = st.gaps.slice(-8);
+    if (g.length >= 2) {
+      const mx = Math.max(...g.map(x => x.g)), mn = Math.min(...g.map(x => x.g)), lo = Math.max(0, mn - 6);
+      h += '<div class="label" style="margin:14px 0 6px">最近的週期長度</div><div class="pbars">' + g.map(x => '<div><em>' + x.g + '</em><i style="height:' + Math.round((x.g - lo) / (mx - lo || 1) * 70 + 20) + '%;' + (st.goodIds.has(x.id) ? '' : 'background:#c9cfdb') + '"></i></div>').join('') + '</div>';
+    }
+    return h + '</div>';
   }
   function logChips(lg, own) {
     const parts = [];
@@ -172,7 +241,7 @@
     h += '</div>';
     const [ty, tm] = D.ymd(t);
     if (ty !== y || tm !== m) h += '<div class="center" style="margin-top:6px"><button class="link-btn small" data-act="pcal-today">回到今天</button></div>';
-    h += '<div class="plegend"><span><i style="background:#e0567f"></i>經期</span><span><i style="background:rgba(240,115,153,.25)"></i>預計的經期</span><span><i style="background:rgba(167,139,250,.35)"></i>易孕期</span><span><i style="background:#fff;box-shadow:inset 0 0 0 2px #8b6cf0"></i>排卵日</span></div></div>';
+    h += '<div class="plegend"><span><i style="background:' + PH.men.c + '"></i>經期</span><span><i style="background:rgba(224,86,127,.22)"></i>預計的經期</span><span><i style="background:rgba(139,108,240,.24)"></i>易孕期</span><span><i style="background:#fff;box-shadow:inset 0 0 0 2px ' + PH.ovu.c + '"></i>排卵日</span></div></div>';
     return h;
   }
 
@@ -190,6 +259,32 @@
         Store.put('period', { start, end }, id); api.close(); toast('已記錄', 'drop');
       };
       if (id) api.$('[data-del]').onclick = () => { Store.remove(id); api.close(); };
+    });
+  }
+  function bulkSheet() {
+    const I = info();
+    const rowHTML = () => '<div class="two pbulk" style="margin-bottom:8px;grid-template-columns:1fr 1fr 32px;align-items:center"><input type="date" class="field" data-s max="' + D.today() + '"><input type="date" class="field" data-e max="' + D.today() + '"><button type="button" class="faint" data-rx aria-label="刪除這行">' + icon('x', 'sm') + '</button></div>';
+    openSheet('<h2>補記過往記錄</h2><p class="small muted" style="margin-top:-8px">輸入以前每次經期開始（和結束）的日子，記錄越多，估算越準。結束日可以留空。</p>' +
+      '<div class="two small faint" style="grid-template-columns:1fr 1fr 32px;margin:0 2px 6px"><span>開始</span><span>結束（可選）</span><span></span></div>' +
+      '<div data-rows>' + rowHTML() + rowHTML() + rowHTML() + '</div>' +
+      '<button type="button" class="link-btn" data-add style="margin:4px 2px 6px">' + icon('plus', 'xs') + '加一行</button>' +
+      '<div class="actions"><button class="btn" data-save>儲存</button></div>', api => {
+      const box = api.$('[data-rows]');
+      api.$('[data-add]').onclick = () => box.insertAdjacentHTML('beforeend', rowHTML());
+      box.onclick = e => { const b = e.target.closest('[data-rx]'); if (b) b.closest('.pbulk').remove(); };
+      api.$('[data-save]').onclick = () => {
+        const have = new Set(info().recs.map(r => r.start));
+        let n = 0, dup = 0;
+        Array.from(box.querySelectorAll('.pbulk')).forEach(r => {
+          const st = r.querySelector('[data-s]').value; let en = r.querySelector('[data-e]').value;
+          if (!D.valid(st)) return;
+          if (have.has(st)) { dup++; return; }
+          if (en && (en < st || D.diff(st, en) > 15)) en = '';
+          Store.put('period', { start: st, end: en }); have.add(st); n++;
+        });
+        api.close();
+        toast(n ? '已補記 ' + n + ' 次' + (dup ? '（' + dup + ' 次已經有）' : '') : '沒有新的記錄', n ? 'drop' : null);
+      };
     });
   }
   function moodSheet(day) {
@@ -240,7 +335,7 @@
       (own ? '<div class="label">你的另一半看到甚麼</div><div data-share>' + shares.map(([k, ic, n]) => '<button type="button" class="opt" data-k="' + k + '">' + icon(ic, 'sm') + '<span>' + n + '</span><span class="ck">' + (I.share === k ? icon('check') : '') + '</span></button>').join('') + '</div>' +
         '<p class="small faint" style="margin:4px 4px 0">當天的筆記，在任何情況下都不會分享。</p>'
         : '<p class="small muted" style="margin:10px 4px 0">' + icon('lock', 'xs') + ' 分享多少由 ' + esc(A.nm(owner)) + ' 在自己的手機決定。</p>') +
-      '<div class="set-row" style="margin-top:12px"><div><div style="font-weight:600">經期長度</div><div class="small muted">沒有記錄結束日時用這個</div></div><div class="row" style="gap:6px"><button class="round-btn" style="width:36px;height:36px" data-len="-1">−</button><b style="width:28px;text-align:center" data-lenv>' + I.len + '</b><button class="round-btn" style="width:36px;height:36px" data-len="1">+</button></div></div>' +
+      '<div class="set-row" style="margin-top:12px"><div><div style="font-weight:600">經期長度</div><div class="small muted">有記錄結束日之後會自動按記錄計算</div></div><div class="row" style="gap:6px"><button class="round-btn" style="width:36px;height:36px" data-len="-1">−</button><b style="width:28px;text-align:center" data-lenv>' + I.len + '</b><button class="round-btn" style="width:36px;height:36px" data-len="1">+</button></div></div>' +
       '<div class="actions"><button class="btn" data-x>完成</button></div>', api => {
       api.$('[data-owner]').onclick = e => { const b = e.target.closest('button'); if (!b) return; api.$$('[data-owner] button').forEach(z => z.classList.toggle('on', z === b)); A.setS({ periodWho: b.dataset.k }); toast('經期記錄是 ' + A.nm(b.dataset.k) + ' 的', 'check'); api.close(); setTimeout(settingsSheet, 250); };
       const sh = api.$('[data-share]'); if (sh) sh.onclick = e => { const b = e.target.closest('.opt'); if (!b) return; api.$$('[data-share] .ck').forEach(c => c.innerHTML = ''); b.querySelector('.ck').innerHTML = icon('check'); A.setS({ periodShare: b.dataset.k }); };
@@ -273,6 +368,7 @@
     'p-start-today'() { ensureOwner(); Store.put('period', { start: D.today(), end: '' }); toast('已記錄', 'drop'); },
     'p-end-today'(el) { Store.patch(el.dataset.id, { end: D.today() }); toast('已記錄', 'check'); },
     'p-add'() { recordSheet(); },
+    'p-bulk'() { bulkSheet(); },
     'p-edit'(el) { recordSheet(el.dataset.id); },
     'p-mood'(el) { moodSheet(el.dataset.k); },
     'p-day'(el) { daySheet(el.dataset.k); },
