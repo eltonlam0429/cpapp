@@ -104,7 +104,10 @@
     const mid = addDays(newMoonDate(k), 14);
     const [y, m, d] = mid.split('-').map(Number);
     const p = {}; fmt.formatToParts(new Date(Date.UTC(y, m - 1, d))).forEach(x => { p[x.type] = x.value; });
-    return { year: Number(p.relatedYear || p.year), month: parseInt(p.month, 10), leap: !/^\d+$/.test(p.month || '') };
+    const month = parseInt(p.month, 10);
+    let year = Number(p.relatedYear);
+    if (!year) year = month >= 10 && m <= 3 ? y - 1 : y; // 某些瀏覽器沒有 relatedYear：由公曆年份推算
+    return { year, month, leap: !/^\d+$/.test(p.month || '') };
   }
   const lunarCache = {};
   function lunarYear(y) { // 農曆 y 年各月的初一

@@ -650,6 +650,8 @@
     const lead = D.dow(first); // 星期日開始
 
     let h = head('日曆', '你們的計劃、活動和重要日子', { trash: 'calendar' });
+    if (on('hkhol') && App.holState === 'missing') h += '<div class="hint-bar" style="border-color:var(--danger)">' + icon('flag', 'xs') + ' 公眾假期載入不到：GitHub 上找不到 <b>js/hkholidays.js</b>。請把這個檔案上傳到 js 資料夾，等幾分鐘後重開 app。</div>';
+    else if (on('hkhol') && window.HKHolidays && !HKHolidays.lunarSupported) h += '<div class="hint-bar">' + icon('flag', 'xs') + ' 這個瀏覽器不支援農曆計算，只顯示公曆和復活節、清明節的公眾假期。請更新 iOS / 瀏覽器。</div>';
     h += '<div class="glass card" id="calCard"><div class="cal-head"><button class="cal-nav" data-act="cal-prev" aria-label="上個月">' + icon('chevL') + '</button>' +
       '<button class="ttl" data-act="cal-pick">' + y + '年' + m + '月' + icon('chevD', 'xs') + '</button>' +
       '<button class="cal-nav" data-act="cal-next" aria-label="下個月">' + icon('chevR') + '</button></div>';
@@ -1602,6 +1604,15 @@
 
   /* ================= 啟動 ================= */
   applyTheme();
+  // 香港公眾假期模組：如果 index.html 舊版沒有載入，自己補載
+  App.holState = window.HKHolidays ? 'ok' : 'loading';
+  if (!window.HKHolidays) {
+    const sc = document.createElement('script');
+    sc.src = 'js/hkholidays.js?v=' + encodeURIComponent(window.APP_VERSION || Date.now());
+    sc.onload = () => { App.holState = window.HKHolidays ? 'ok' : 'missing'; render(); };
+    sc.onerror = () => { App.holState = 'missing'; render(); };
+    document.body.appendChild(sc);
+  }
   // 打開 app 時先去設定好的頁面（每次打開只做一次）
   try {
     const sp = Store.device.startPage;
