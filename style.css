@@ -672,3 +672,6 @@ details.hist summary::-webkit-details-marker { display: none; }
 .pd.b-pred .band { background: rgba(224,86,127,.22); }
 .pd.b-fertile .band { background: rgba(139,108,240,.24); }
 .pd.b-ovu .num { box-shadow: inset 0 0 0 2px #8b6cf0; }
+
+/* ====== 香港公眾假期：日曆紅字 ====== */
+.cal-day.hol:not(.today) .num { color: #e5484d !important; font-weight: 650; }
