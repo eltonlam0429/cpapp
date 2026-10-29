@@ -5,7 +5,7 @@
   const tabbar = document.getElementById('tabbar');
 
   /* ================= 設定與身分 ================= */
-  const SECTION_DEF = { question: false, dolist: true, trips: true, capsule: true, vault: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
+  const SECTION_DEF = { question: false, hkhol: true, dolist: true, trips: true, capsule: true, vault: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
   /* 設定逐項存成獨立的資料（cfg_xxx），每一項各自同步，互不覆蓋。
      舊版本的 'settings' 仍然讀取，作為底稿。 */
   const CFG_KEYS = ['names.a', 'names.b', 'together', 'birthday.a', 'birthday.b', 'sections', 'periodLen', 'listCats', 'wishCats', 'periodShare', 'periodWho', 'male', 'doCats', 'currency'];
@@ -175,6 +175,11 @@
       }
       ['a', 'b'].forEach(w => {
         if (D.valid(s.birthday[w])) yearlyBetween(s.birthday[w], from, to).forEach(x => { if (x.n > 0) out.push({ date: x.date, title: nm(w) + ' 生日', kind: 'birthday', who: w, color: colorOf(w), sub: x.n + ' 歲' }); });
+      });
+    }
+    if (on('hkhol') && window.HKHolidays) {
+      HKHolidays.between(from, to).forEach(hd => {
+        out.push({ date: hd.date, title: hd.name, kind: 'holiday', color: '#e5484d', sub: hd.sub ? '補假' : hd.onSunday ? '公眾假期（適逢星期日，另有補假）' : '公眾假期' });
       });
     }
     if (on('trips')) {
@@ -653,20 +658,21 @@
     for (let d = 1; d <= D.daysInMonth(y, m); d++) {
       const k = D.make(y, m, d);
       const list = byDay[k] || [];
-      const marks = list.filter(x => x.kind !== 'period');
+      const marks = list.filter(x => x.kind !== 'period' && x.kind !== 'holiday');
+      const hol = list.find(x => x.kind === 'holiday' && !/星期日/.test(x.sub));
       const dots = marks.slice(0, 4).map(x => {
         const w = x.who || (x.kind === 'birthday' ? x.who : 'both');
         return (x.kind === 'event' || x.kind === 'trip' || x.kind === 'birthday') && w && w !== 'both' ? '<i style="background:' + colorOf(w) + '"></i>' : HEART;
       }).join('');
       const dw = D.dow(k);
-      const cls = ['cal-day', k === t ? 'today' : '', k === ui.calSel ? 'sel' : '', pd[k] === 'period' ? 'period' : pd[k] === 'pred' ? 'period-pred' : '', dw === 0 || dw === 6 ? 'wkend' : ''].join(' ');
-      h += '<button class="' + cls + '" data-act="cal-day" data-k="' + k + '"><span class="num">' + d + '</span><span class="dots">' + dots + '</span></button>';
+      const cls = ['cal-day', k === t ? 'today' : '', k === ui.calSel ? 'sel' : '', pd[k] === 'period' ? 'period' : pd[k] === 'pred' ? 'period-pred' : '', dw === 0 || dw === 6 ? 'wkend' : '', hol || dw === 0 ? 'hol' : ''].join(' ');
+      h += '<button class="' + cls + '" data-act="cal-day" data-k="' + k + '"' + (hol ? ' title="' + esc(hol.title) + '"' : '') + '><span class="num">' + d + '</span><span class="dots">' + dots + '</span></button>';
     }
     h += '</div>';
     const [ty, tm] = D.ymd(t);
     if (ty !== y || tm !== m) h += '<div class="center" style="margin-top:8px"><button class="link-btn small" data-act="cal-today">回到今天</button></div>';
     const male = S().male || 'a', female = male === 'a' ? 'b' : 'a';
-    h += '<div class="plegend"><span><i style="background:' + colorOf(male) + '"></i>' + esc(nm(male)) + '</span><span><i style="background:' + colorOf(female) + '"></i>' + esc(nm(female)) + '</span><span class="row" style="gap:5px">' + HEART + '一起</span></div>';
+    h += '<div class="plegend"><span><i style="background:' + colorOf(male) + '"></i>' + esc(nm(male)) + '</span><span><i style="background:' + colorOf(female) + '"></i>' + esc(nm(female)) + '</span><span class="row" style="gap:5px">' + HEART + '一起</span>' + (on('hkhol') ? '<span><b style="color:#e5484d;margin-right:4px">紅字</b>公眾假期</span>' : '') + '</div>';
     h += '</div>';
 
     // 選中的一天
@@ -686,7 +692,7 @@
     return h;
   }
   function markerRow(x) {
-    const act = x.kind === 'event' ? 'event-edit' : x.kind === 'day' ? 'day-edit' : x.kind === 'together' ? 'together' : x.kind === 'birthday' ? 'birthday' : x.kind === 'period' ? 'go-period' : '';
+    const act = x.kind === 'event' ? 'event-edit' : x.kind === 'day' ? 'day-edit' : x.kind === 'together' ? 'together' : x.kind === 'birthday' ? 'birthday' : x.kind === 'period' ? 'go-period' : x.kind === 'holiday' ? 'hol-info' : '';
     return '<button class="mk" style="width:100%;text-align:left" data-act="' + act + '"' + (x.id ? ' data-id="' + x.id + '"' : '') + (x.who ? ' data-w="' + x.who + '"' : '') + '>' +
       '<span class="date"><div class="d">' + D.ymd(x.date)[2] + '</div><div class="w">週' + D.WD[D.dow(x.date)] + '</div></span><span class="bar" style="background:' + x.color + '"></span>' +
       '<span class="grow"><div style="font-weight:600">' + esc(x.title) + '</div>' + (x.sub || x.place || x.multi ? '<div class="small muted">' + [x.sub, x.multi && '第 ' + x.multi + ' 天', x.place].filter(Boolean).map(esc).join(' · ') + '</div>' : '') + '</span></button>';
@@ -901,7 +907,8 @@
       L('todo', 'todo', '待辦事項', '兩個人的小事', '#/todo') +
       L('lists', 'list', '清單', '買菜、電影、計劃', '#/lists') +
       L('wishes', 'star', '願望清單', '想去的地方、想要的東西', '#/wishes') +
-      L('calendar', 'cal', '日曆', '活動和重要日子', '#/calendar') + '</div>';
+      L('calendar', 'cal', '日曆', '活動和重要日子', '#/calendar') +
+      L('hkhol', 'flag', '香港公眾假期', '自動計算，顯示在日曆', '#/calendar') + '</div>';
     h += '<div class="label">你們存下的</div><div class="glass card tight list">' +
       L('know', 'note', '要知道的事', '尺碼、喜歡的、不喜歡的', '#/know') +
       L('plans', 'card', '計劃', '一個目標，一起存錢', '#/plans') +
@@ -918,7 +925,7 @@
   }
   function pageParts() {
     const sec = S().sections;
-    const items = [['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['period', 'drop', '經期'], ['know', 'note', '要知道的事'], ['plans', 'card', '計劃'], ['jots', 'pencil', '筆記'], ['year', 'spark', '我們的一年'], ['dolist', 'coffee', '一起做'], ['trips', 'flag', '旅行清單'], ['capsule', 'hourglass', '時間囊'], ['vault', 'lock', '保險箱']];
+    const items = [['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['hkhol', 'flag', '香港公眾假期'], ['period', 'drop', '經期'], ['know', 'note', '要知道的事'], ['plans', 'card', '計劃'], ['jots', 'pencil', '筆記'], ['year', 'spark', '我們的一年'], ['dolist', 'coffee', '一起做'], ['trips', 'flag', '旅行清單'], ['capsule', 'hourglass', '時間囊'], ['vault', 'lock', '保險箱']];
     let h = head('部分', '這個應用程式為你們兩個準備了甚麼。', { back: true });
     h += '<div class="hint-bar">關掉一個部分只是收起來，不會刪除；再開啟，全部都回來。兩部手機會一起改。</div>';
     h += '<div class="glass card tight list">' + items.map(([k, ic, t]) => '<label class="li"><span class="ic">' + icon(ic, 'sm') + '</span><span class="grow tt">' + t + '</span><span class="switch"><input type="checkbox" data-part="' + k + '"' + (sec[k] !== false ? ' checked' : '') + '><span></span></span></label>').join('') + '</div>';
@@ -1449,6 +1456,11 @@
     },
     async 'note-clear'() { if (await confirmSheet('收回便條？', '對方的主頁不會再顯示。', '收回')) Store.remove('note_' + ME(), { silent: true }); },
     'together-info': togetherInfoSheet,
+    'hol-info'() {
+      openSheet('<h2>香港公眾假期</h2><p class="muted" style="margin-top:-8px">按《公眾假期條例》自動計算，任何年份都會自動出現，不用更新。</p>' +
+        '<div class="small" style="line-height:1.8"><b>計算方法</b><br>・農曆假期：用天文公式計算新月，以香港時間為準<br>・清明節：太陽到達黃經 15° 那天<br>・復活節：教會曆法<br>・補假：假期落在星期日，或者和另一個假期同一天，就補在之後第一個本身不是假期的日子；星期六不補</div>' +
+        '<p class="small faint">已經和政府公布的 2012、2021、2022、2026、2027 年假期核對過。政府偶爾會因特別情況另行宣布假期，請以政府公布為準。可以在「部分」關掉。</p><div class="actions"><button class="btn" data-x>好</button></div>', api => { api.$('[data-x]').onclick = () => api.close(); });
+    },
     startpage: startPageSheet,
     whoami: whoamiSheet,
     gender() {
