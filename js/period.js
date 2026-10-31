@@ -22,9 +22,15 @@
     const s = A.S();
     const recs = Store.all('period').filter(p => D.valid(p.start)).sort((a, b) => a.start < b.start ? -1 : 1);
     const gaps = [];
-    for (let i = 1; i < recs.length; i++) { const g = D.diff(recs[i - 1].start, recs[i].start); if (g >= 15 && g <= 90) gaps.push({ id: recs[i - 1].id, g }); }
+    for (let i = 1; i < recs.length; i++) {
+      const g = D.diff(recs[i - 1].start, recs[i].start);
+      if (g >= 1) gaps.push({ id: recs[i].id, prev: recs[i - 1].start, g, confirmed: !!recs[i].confirmed });
+    }
     const med = median(gaps.map(x => x.g));
-    const good = gaps.filter(x => Math.abs(x.g - med) <= 10 && x.g >= 18 && x.g <= 60);
+    // 正常範圍：和中位數相差 10 天內，而且 18–60 天；範圍外的要你核實，核實了就一樣計入
+    const normal = x => Math.abs(x.g - med) <= 10 && x.g >= 18 && x.g <= 60;
+    const good = gaps.filter(x => normal(x) || x.confirmed);
+    const unusual = gaps.filter(x => !normal(x) && !x.confirmed);
     const recent = good.slice(-6);
     let cycle = 28;
     if (recent.length) { let sw = 0, sg = 0; recent.forEach((x, i) => { const w = i + 1; sw += w; sg += x.g * w; }); cycle = Math.round(sg / sw); }
@@ -44,7 +50,7 @@
       min: gs.length ? Math.min(...gs) : null,
       max: gs.length ? Math.max(...gs) : null,
       sd, avgLen: lens.length ? Math.round(lens.reduce((a, b) => a + b, 0) / lens.length * 10) / 10 : null,
-      goodIds: new Set(good.map(x => x.id)), gaps
+      goodIds: new Set(good.map(x => x.id)), unusualIds: new Set(unusual.map(x => x.id)), med, gaps
     };
     return { recs, len, cycle, last, next, owner, share, avgReal: recent.length > 0, lenReal: recentLens.length > 0, stat };
   }
@@ -144,15 +150,19 @@
     const desc = I.recs.slice().sort((a, b) => a.start < b.start ? 1 : -1); // 最新在最上面
     h += '<div class="section-h">之前的記錄' + (edit ? '<button class="link-btn small" data-act="p-bulk">' + icon('plus', 'xs') + '補記過往記錄</button>' : '') + '</div>';
     h += '<div class="glass card tight list no-icon">' + desc.map((r, i) => {
-      const newer = desc[i - 1];
+      const older = desc[i + 1];
       const len = r.end ? D.diff(r.start, r.end) + 1 : null;
-      let cyc;
-      if (newer) { const g = D.diff(r.start, newer.start); cyc = '週期 ' + g + ' 天' + (I.stat.goodIds.has(r.id) ? '' : '（不尋常，不計入估算）'); }
-      else cyc = '這個週期第 ' + (D.diff(r.start, t) + 1) + ' 天';
-      const s = [len ? '經期 ' + len + ' 天' : '沒有記錄結束', cyc].join(' · ');
+      const lines = [len ? '經期 ' + len + ' 天' : '沒有記錄結束'];
+      if (older) lines.push('距上一次（' + D.md(older.start) + '）' + D.diff(older.start, r.start) + ' 天');
+      else lines.push('最早的記錄');
+      if (i === 0) lines.push('現在是這個週期第 ' + (D.diff(r.start, t) + 1) + ' 天');
+      let tag = '';
+      if (I.stat.unusualIds.has(r.id)) tag = '<button class="tag red" data-act="p-verify" data-id="' + r.id + '" style="margin-top:6px">' + icon('help', 'xs') + '不尋常 · 請核實</button>';
+      else if (r.confirmed && older) tag = '<button class="tag" data-act="p-verify" data-id="' + r.id + '" style="margin-top:6px">' + icon('check', 'xs') + '已核實，有計入</button>';
       const ttl = D.ymdText(r.start) + (r.end ? ' – ' + D.md(r.end) : '');
-      return edit ? A.row({ act: 'p-edit', id: r.id, t: ttl, s }) : A.row({ t: ttl, s, noChev: true });
-    }).join('') + '</div>' + (edit ? '<p class="small faint" style="margin:-4px 4px 14px">輸入錯了？按記錄就可以改開始和結束的日子，或者刪除。</p>' : '');
+      return '<div class="li"><' + (edit ? 'button data-act="p-edit" data-id="' + r.id + '"' : 'div') + ' class="grow" style="text-align:left"><div class="tt">' + ttl + '</div><div class="ts">' + lines.join(' · ') + '</div></' + (edit ? 'button' : 'div') + '>' +
+        (tag ? '<div>' + tag + '</div>' : '') + (edit ? '<span class="chev">' + icon('chevR', 'sm') + '</span>' : '') + '</div>';
+    }).join('') + '</div>' + (edit ? '<p class="small faint" style="margin:-4px 4px 14px">「距上一次」是由上一次經期開始那天，數到這一次開始那天。輸入錯了？按記錄就可以改日子或者刪除。</p>' : '');
     return h;
   }
   function phaseBar(x) {
@@ -195,7 +205,7 @@
       tile(st.avgLen != null ? st.avgLen + ' 天' : '—', '平均經期') +
       tile(reg ? reg : '—', '規律程度' + (reg ? '（±' + Math.round(st.sd * 10) / 10 + ' 天）' : '')) +
       tile(I.cycle + ' 天', '下次估算用') + '</div>' +
-      (st.cycles > st.used ? '<div class="small faint" style="margin-top:8px">有 ' + (st.cycles - st.used) + ' 個不尋常的週期（例如漏記了一次）沒有計入，灰色顯示。</div>' : '');
+      (st.unusualIds.size ? '<div class="small" style="margin-top:8px;color:var(--danger)">' + icon('help', 'xs') + ' 有 ' + st.unusualIds.size + ' 個週期比平常長或短很多，請在下面「之前的記錄」核實。核實之前暫時不計入估算（灰色）。</div>' : '');
     // 最近 8 個週期的長度
     const g = st.gaps.slice(-8);
     if (g.length >= 2) {
@@ -247,6 +257,24 @@
 
   /* ---------- 彈出窗 ---------- */
   function ensureOwner() { /* 誰的記錄由設定決定，預設女方 */ }
+  function verifySheet(id) {
+    const I = info(), gp = I.stat.gaps.find(x => x.id === id), r = Store.get(id);
+    if (!gp || !r) return;
+    const usual = Math.round(I.stat.med) || 28;
+    const longer = gp.g > usual;
+    const mid = D.add(gp.prev, Math.round(gp.g / 2));
+    openSheet('<h2>核實這個週期</h2><p class="muted" style="margin-top:-8px">' + D.ymdText(gp.prev) + ' 到 ' + D.ymdText(r.start) + '，相隔 <b>' + gp.g + ' 天</b>，' + (longer ? '比平常（約 ' + usual + ' 天）長很多。可能中間漏記了一次。' : '比平常（約 ' + usual + ' 天）短很多。可能日子輸入錯了。') + '</p>' +
+      '<div class="stack">' +
+      (r.confirmed ? '<button class="btn ghost block" data-un>' + icon('undo', 'sm') + '取消核實（不計入估算）</button>'
+        : '<button class="btn block" data-ok>' + icon('check', 'sm') + '確認是真的，計入估算</button>') +
+      (longer ? '<button class="btn ghost block" data-miss>' + icon('plus', 'sm') + '我漏記了，補記中間那一次</button>' : '') +
+      '<button class="btn ghost block" data-edit>' + icon('pencil', 'sm') + '修改 ' + D.md(r.start) + ' 這次的日子</button></div>', api => {
+      const ok = api.$('[data-ok]'); if (ok) ok.onclick = () => { Store.patch(id, { confirmed: true }); api.close(); toast('已核實，會計入估算', 'check'); };
+      const un = api.$('[data-un]'); if (un) un.onclick = () => { Store.patch(id, { confirmed: false }); api.close(); };
+      const ms = api.$('[data-miss]'); if (ms) ms.onclick = () => { api.close(); recordSheet(null, { start: mid }); };
+      api.$('[data-edit]').onclick = () => { api.close(); recordSheet(id); };
+    });
+  }
   function recordSheet(id, preset) {
     const x = id ? Store.get(id) : Object.assign({ start: D.today(), end: '' }, preset);
     openSheet('<h2>' + (id ? '這次經期' : '記錄一次經期') + '</h2><div class="label">開始</div><input type="date" class="field" name="start" value="' + esc(x.start) + '"><div class="label">結束（可選，還沒結束就留空）</div><input type="date" class="field" name="end" value="' + esc(x.end || '') + '">' +
@@ -256,7 +284,8 @@
         if (!D.valid(start)) return;
         if (end && end < start) end = '';
         ensureOwner();
-        Store.put('period', { start, end }, id); api.close(); toast('已記錄', 'drop');
+        const prevRec = id ? Store.get(id) : null;
+        Store.put('period', Object.assign({}, prevRec || {}, { start, end, confirmed: prevRec && prevRec.start === start ? !!prevRec.confirmed : false }), id); api.close(); toast('已記錄', 'drop');
       };
       if (id) api.$('[data-del]').onclick = () => { Store.remove(id); api.close(); };
     });
@@ -369,6 +398,7 @@
     'p-end-today'(el) { Store.patch(el.dataset.id, { end: D.today() }); toast('已記錄', 'check'); },
     'p-add'() { recordSheet(); },
     'p-bulk'() { bulkSheet(); },
+    'p-verify'(el) { verifySheet(el.dataset.id); },
     'p-edit'(el) { recordSheet(el.dataset.id); },
     'p-mood'(el) { moodSheet(el.dataset.k); },
     'p-day'(el) { daySheet(el.dataset.k); },
