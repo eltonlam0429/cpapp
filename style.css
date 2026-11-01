@@ -675,3 +675,31 @@ details.hist summary::-webkit-details-marker { display: none; }
 
 /* ====== 香港公眾假期：日曆紅字 ====== */
 .cal-day.hol:not(.today) .num { color: #e5484d !important; font-weight: 650; }
+
+/* ====== 食譜 ====== */
+.rcp-gh { padding: 12px 16px 4px; font-weight: 700; color: var(--accent-deep); font-size: 14px; }
+.rcp-ih { padding: 10px 16px 4px !important; }
+.rcp-ih::after { display: none; }
+.rcp-step { display: flex; gap: 12px; width: 100%; text-align: left; padding: 12px 16px; align-items: flex-start; position: relative; }
+.rcp-step + .rcp-step::after { content: ""; position: absolute; top: 0; left: 52px; right: 16px; height: 1px; background: var(--line); }
+.rcp-step .no { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: rgba(var(--accent-rgb), .1); color: var(--accent-deep); margin-top: 1px; }
+.rcp-step .tx { display: block; line-height: 1.55; }
+.rcp-step.on .no { background: var(--btn-bg); color: var(--btn-ink); }
+.rcp-step.on .tx { color: var(--ink-3); text-decoration: line-through; }
+.rcp-uses { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.rcp-use { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: rgba(245, 169, 59, .14); color: #8a5a10; }
+.rcp-use b { font-weight: 700; color: #6b4206; }
+.rcp-step.on .rcp-use { opacity: .5; }
+.rcp-erow { display: grid; grid-template-columns: 1fr 36% 28px; gap: 8px; align-items: center; margin-bottom: 8px; }
+.rcp-erow .field, .rcp-estep .field { padding: 11px 12px; }
+.rcp-estep { padding: 8px 0; border-top: 1px solid var(--line); }
+.rcp-estep .no { width: 24px; height: 24px; margin-top: 12px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: rgba(var(--accent-rgb), .1); color: var(--accent-deep); }
+.rcp-euses { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px 32px; }
+.rcp-echip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 99px; background: rgba(245, 169, 59, .14); color: #8a5a10; font-size: 13px; }
+.rcp-echip input { width: 82px; border: 0; background: rgba(255,255,255,.85); border-radius: 99px; padding: 4px 8px; font-size: 13px; outline: none; color: var(--ink); }
+.rcp-echip button { width: 22px; height: 22px; display: grid; place-items: center; color: #8a5a10; }
+.rcp-euses .chip.add { height: 30px; font-size: 13px; }
+
+.rcp-ta { min-height: 0; resize: none; line-height: 1.5; overflow: hidden; }
+.rcp-actions { display: flex; gap: 10px; margin: 6px 0 0; }
+.rcp-actions .btn:last-child { flex: 1; }
