@@ -291,6 +291,7 @@
     }
     if (on('capsule')) { const n = Store.all('capsule').filter(c => c.openOn > D.today()).length; out.push(['#/capsule', 'hourglass', '時間囊', n ? n + ' 封還未到時候' : '寫一封未來才打開的信']); }
     if (on('vault')) out.push(['#/vault', 'lock', '保險箱', '要密碼才打開']);
+    if (on('recipes')) { const n = Store.all('recipe').length; out.push(['#/recipes', 'book', '食譜', n ? n + ' 個食譜' : '你們的拿手菜']); }
     if (on('year')) out.push(['#/year', 'spark', '我們的一年', D.ymd(D.today())[0] + ' 年回顧']);
     return out;
   };

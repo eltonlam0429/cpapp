@@ -5,7 +5,7 @@
   const tabbar = document.getElementById('tabbar');
 
   /* ================= 設定與身分 ================= */
-  const SECTION_DEF = { question: false, hkhol: true, dolist: true, trips: true, capsule: true, vault: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
+  const SECTION_DEF = { question: false, hkhol: true, recipes: true, dolist: true, trips: true, capsule: true, vault: true, note: true, todo: true, lists: true, wishes: true, calendar: true, period: true, know: true, plans: true, jots: true, year: true };
   /* 設定逐項存成獨立的資料（cfg_xxx），每一項各自同步，互不覆蓋。
      舊版本的 'settings' 仍然讀取，作為底稿。 */
   const CFG_KEYS = ['names.a', 'names.b', 'together', 'birthday.a', 'birthday.b', 'sections', 'periodLen', 'listCats', 'wishCats', 'periodShare', 'periodWho', 'male', 'doCats', 'currency'];
@@ -915,6 +915,7 @@
       L('know', 'note', '要知道的事', '尺碼、喜歡的、不喜歡的', '#/know') +
       L('plans', 'card', '計劃', '一個目標，一起存錢', '#/plans') +
       L('jots', 'pencil', '筆記', '你們兩個的本子', '#/jots') +
+      L('recipes', 'book', '食譜', '中式、西式，材料和步驟', '#/recipes') +
       L('year', 'spark', '我們的一年', '這十二個月做過的', '#/year') + '</div>';
     h += '<div class="label">一起去、一起做</div><div class="glass card tight list">' +
       L('dolist', 'coffee', '一起做', '電影、劇集、演唱會、想去的地方', '#/dolist') +
@@ -927,7 +928,7 @@
   }
   function pageParts() {
     const sec = S().sections;
-    const items = [['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['hkhol', 'flag', '香港公眾假期'], ['period', 'drop', '經期'], ['know', 'note', '要知道的事'], ['plans', 'card', '計劃'], ['jots', 'pencil', '筆記'], ['year', 'spark', '我們的一年'], ['dolist', 'coffee', '一起做'], ['trips', 'flag', '旅行清單'], ['capsule', 'hourglass', '時間囊'], ['vault', 'lock', '保險箱']];
+    const items = [['note', 'phone', '螢幕便條'], ['todo', 'todo', '待辦事項'], ['lists', 'list', '清單'], ['wishes', 'star', '願望清單'], ['calendar', 'cal', '日曆'], ['hkhol', 'flag', '香港公眾假期'], ['period', 'drop', '經期'], ['know', 'note', '要知道的事'], ['plans', 'card', '計劃'], ['jots', 'pencil', '筆記'], ['recipes', 'book', '食譜'], ['year', 'spark', '我們的一年'], ['dolist', 'coffee', '一起做'], ['trips', 'flag', '旅行清單'], ['capsule', 'hourglass', '時間囊'], ['vault', 'lock', '保險箱']];
     let h = head('部分', '這個應用程式為你們兩個準備了甚麼。', { back: true });
     h += '<div class="hint-bar">關掉一個部分只是收起來，不會刪除；再開啟，全部都回來。兩部手機會一起改。</div>';
     h += '<div class="glass card tight list">' + items.map(([k, ic, t]) => '<label class="li"><span class="ic">' + icon(ic, 'sm') + '</span><span class="grow tt">' + t + '</span><span class="switch"><input type="checkbox" data-part="' + k + '"' + (sec[k] !== false ? ' checked' : '') + '><span></span></span></label>').join('') + '</div>';
@@ -1236,7 +1237,7 @@
   }
 
   /* ================= 打開時的頁面（每部裝置各自設定） ================= */
-  const START_PAGES = [['home', '主頁', 'home'], ['todo', '待辦事項', 'todo'], ['dolist', '一起做', 'coffee'], ['calendar', '日曆', 'cal'], ['period', '經期', 'drop'], ['note', '螢幕便條', 'phone'], ['trips', '旅行清單', 'flag'], ['jots', '筆記', 'pencil'], ['know', '要知道的事', 'note']];
+  const START_PAGES = [['home', '主頁', 'home'], ['todo', '待辦事項', 'todo'], ['dolist', '一起做', 'coffee'], ['calendar', '日曆', 'cal'], ['period', '經期', 'drop'], ['note', '螢幕便條', 'phone'], ['trips', '旅行清單', 'flag'], ['jots', '筆記', 'pencil'], ['recipes', '食譜', 'book'], ['know', '要知道的事', 'note']];
   function startPageSheet() {
     const cur = Store.device.startPage || 'home';
     openSheet('<h2>打開時的頁面</h2><p class="small muted" style="margin-top:-8px">每次打開 app 先去哪一頁。只改這部裝置。</p>' +
@@ -1286,7 +1287,7 @@
   };
   Object.assign(PAGES, App.pages);
   Object.assign(App, { head, row, emptyHTML, render: () => render(), listsBody: () => pageLists('', true), wishesBody: () => pageWishes('', true) });
-  const TAB_OF = { home: 'home', question: 'home', note: 'home', sections: 'home', period: 'home', wishes: 'lists', todo: 'todo', lists: 'lists', list: 'lists', calendar: 'calendar', profile: 'profile', sync: 'profile', trash: 'profile', privacy: 'profile', parts: 'profile', know: 'home', plans: 'home', jots: 'home', year: 'home', dolist: 'lists', trips: 'home', trip: 'home', triptpl: 'home', capsule: 'home', vault: 'home' };
+  const TAB_OF = { home: 'home', question: 'home', note: 'home', sections: 'home', period: 'home', wishes: 'lists', todo: 'todo', lists: 'lists', list: 'lists', calendar: 'calendar', profile: 'profile', sync: 'profile', trash: 'profile', privacy: 'profile', parts: 'profile', know: 'home', plans: 'home', jots: 'home', year: 'home', dolist: 'lists', recipes: 'home', recipe: 'home', 'recipe-edit': 'home', trips: 'home', trip: 'home', triptpl: 'home', capsule: 'home', vault: 'home' };
   function route() {
     const h = location.hash.replace(/^#\/?/, '') || 'home';
     const [name, ...rest] = h.split('/');
@@ -1315,6 +1316,7 @@
     if (same) window.scrollTo(0, y);
     else { window.scrollTo(0, 0); view.classList.remove('page-enter'); void view.offsetWidth; view.classList.add('page-enter'); }
     lastRoute = location.hash;
+    (App.afterRender || []).forEach(fn => { try { fn(); } catch (e) {} });
     if (same && live) { const n = view.querySelector('[data-live]'); if (n) n.focus({ preventScroll: true }); }
     mount(r);
   }

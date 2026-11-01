@@ -54,6 +54,7 @@ window.App = window.App || { pages: {}, acts: {}, forms: {} };
     vote: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
     flame: '<path d="M12 21c-3.9 0-7-2.8-7-6.6 0-3.1 2.2-5.2 3.6-7 .4 1.6 1.3 2.7 2.4 3.3-.2-3 1.3-5.9 3.5-7.7.3 2.6 1.8 4.4 3 6 1.2 1.6 1.5 3 1.5 4.6 0 4-3.1 7.4-7 7.4z"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
     sliders: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'
   };
   window.icon = function (n, cls) {

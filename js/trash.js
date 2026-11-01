@@ -9,12 +9,13 @@
     { k: 'know', n: '要知道的事', ic: 'note', cols: ['know'] },
     { k: 'plans', n: '計劃', ic: 'card', cols: ['plan', 'dep'] },
     { k: 'jots', n: '筆記', ic: 'pencil', cols: ['jot'] },
+    { k: 'recipes', n: '食譜', ic: 'book', cols: ['recipe'] },
     { k: 'capsule', n: '時間囊', ic: 'hourglass', cols: ['capsule'] },
     { k: 'vault', n: '保險箱', ic: 'lock', cols: ['vault', 'vfile'] },
     { k: 'period', n: '經期', ic: 'drop', cols: ['period', 'pday'] },
     { k: 'other', n: '其他', ic: 'grid', cols: ['note', 'answer'] }
   ];
-  const COL = { todo: '待辦', dodo: '一起做', list: '清單', item: '清單項目', wish: '願望', event: '活動', day: '紀念日', trip: '旅行', tci: '旅行清單項目', know: '要知道的事', plan: '計劃', dep: '存款紀錄', jot: '筆記', capsule: '時間囊', vault: '保險箱項目', vfile: '保險箱相片', period: '經期記錄', pday: '經期感覺', note: '便條', answer: '答案' };
+  const COL = { todo: '待辦', dodo: '一起做', list: '清單', item: '清單項目', wish: '願望', event: '活動', day: '紀念日', trip: '旅行', tci: '旅行清單項目', know: '要知道的事', plan: '計劃', dep: '存款紀錄', jot: '筆記', recipe: '食譜', capsule: '時間囊', vault: '保險箱項目', vfile: '保險箱相片', period: '經期記錄', pday: '經期感覺', note: '便條', answer: '答案' };
   // 刪除父項目時，子項目會一起（靜靜地）刪除；復原或永久刪除時一起處理
   const CHILDREN = { list: ['item', 'listId'], trip: ['tci', 'tripId'], plan: ['dep', 'planId'], vault: ['vfile', 'itemId'] };
   const groupOf = col => GROUPS.find(g => g.cols.includes(col));
