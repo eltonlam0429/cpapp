@@ -646,10 +646,10 @@
     const first = D.make(y, m, 1), last = D.make(y, m, dim);
     const lead = D.dow(first); // 星期日開始
     const trail = (7 - (lead + dim) % 7) % 7; // 最後一行用下個月頭幾日填滿
-    const gridEnd = D.add(last, trail);
-    const mkAll = markers(first, gridEnd);
-    const mk = mkAll.filter(x => x.date <= last);
-    const pd = periodDays(first, gridEnd);
+    const gridStart = D.add(first, -lead), gridEnd = D.add(last, trail); // 前後都用上 / 下個月的日子填滿
+    const mkAll = markers(gridStart, gridEnd);
+    const mk = mkAll.filter(x => x.date >= first && x.date <= last);
+    const pd = periodDays(gridStart, gridEnd);
     const byDay = {};
     mkAll.forEach(x => (byDay[x.date] = byDay[x.date] || []).push(x));
 
@@ -660,10 +660,9 @@
       '<button class="ttl" data-act="cal-pick">' + y + '年' + m + '月' + icon('chevD', 'xs') + '</button>' +
       '<button class="cal-nav" data-act="cal-next" aria-label="下個月">' + icon('chevR') + '</button></div>';
     h += '<div class="cal-grid">' + ['日', '一', '二', '三', '四', '五', '六'].map(w => '<div class="wd">' + w + '</div>').join('');
-    for (let i = 0; i < lead; i++) h += '<div class="cal-day blank"></div>';
-    for (let n = 1; n <= dim + trail; n++) {
-      const other = n > dim; // 下個月的日子
-      const k = other ? D.add(last, n - dim) : D.make(y, m, n);
+    for (let n = 1 - lead; n <= dim + trail; n++) {
+      const other = n < 1 || n > dim; // 上個月或下個月的日子
+      const k = D.add(first, n - 1);
       const d = D.ymd(k)[2];
       const list = byDay[k] || [];
       const marks = list.filter(x => x.kind !== 'period' && x.kind !== 'holiday');
@@ -674,8 +673,8 @@
       }).join('');
       const dw = D.dow(k);
       const cls = ['cal-day', other ? 'other' : '', k === t ? 'today' : '', k === ui.calSel ? 'sel' : '', pd[k] === 'period' ? 'period' : pd[k] === 'pred' ? 'period-pred' : '', dw === 0 || dw === 6 ? 'wkend' : '', hol || dw === 0 ? 'hol' : ''].join(' ');
-      h += '<button class="' + cls + '" data-act="cal-day" data-k="' + k + '"' + (other ? ' aria-label="' + D.md(k) + '（下個月）"' : '') + (hol ? ' title="' + esc(hol.title) + '"' : '') + '>' +
-        (other && d === 1 ? '<span class="mlabel">' + D.ymd(k)[1] + '月</span>' : '') + '<span class="num">' + d + '</span><span class="dots">' + dots + '</span></button>';
+      h += '<button class="' + cls + '" data-act="cal-day" data-k="' + k + '"' + (other ? ' aria-label="' + D.md(k) + (n < 1 ? '（上個月）' : '（下個月）') + '"' : '') + (hol ? ' title="' + esc(hol.title) + '"' : '') + '>' +
+        (other && (n === 1 - lead || n === dim + 1) ? '<span class="mlabel">' + D.ymd(k)[1] + '月</span>' : '') + '<span class="num">' + d + '</span><span class="dots">' + dots + '</span></button>';
     }
     h += '</div>';
     const [ty, tm] = D.ymd(t);
@@ -1451,7 +1450,7 @@
     'cal-day'(el) {
       const k = el.dataset.k;
       ui.calSel = k;
-      if (el.classList.contains('other')) { const [yy, mm] = D.ymd(k); ui.calY = yy; ui.calM = mm; } // 按下個月的日子：跳到那個月
+      if (el.classList.contains('other')) { const [yy, mm] = D.ymd(k); ui.calY = yy; ui.calM = mm; } // 按上 / 下個月的日子：跳到那個月
       render();
     },
     'event-new'(el) { eventSheet(null, { date: (el && el.dataset.k) || ui.calSel || D.today() }); },
