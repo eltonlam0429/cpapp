@@ -642,12 +642,16 @@
     const t = D.today();
     if (ui.calY == null) { const [y, m] = D.ymd(t); ui.calY = y; ui.calM = m; }
     const y = ui.calY, m = ui.calM;
-    const first = D.make(y, m, 1), last = D.make(y, m, D.daysInMonth(y, m));
-    const mk = markers(first, last);
-    const pd = periodDays(first, last);
-    const byDay = {};
-    mk.forEach(x => (byDay[x.date] = byDay[x.date] || []).push(x));
+    const dim = D.daysInMonth(y, m);
+    const first = D.make(y, m, 1), last = D.make(y, m, dim);
     const lead = D.dow(first); // 星期日開始
+    const trail = (7 - (lead + dim) % 7) % 7; // 最後一行用下個月頭幾日填滿
+    const gridEnd = D.add(last, trail);
+    const mkAll = markers(first, gridEnd);
+    const mk = mkAll.filter(x => x.date <= last);
+    const pd = periodDays(first, gridEnd);
+    const byDay = {};
+    mkAll.forEach(x => (byDay[x.date] = byDay[x.date] || []).push(x));
 
     let h = head('日曆', '你們的計劃、活動和重要日子', { trash: 'calendar' });
     if (on('hkhol') && App.holState === 'missing') h += '<div class="hint-bar" style="border-color:var(--danger)">' + icon('flag', 'xs') + ' 公眾假期載入不到：GitHub 上找不到 <b>js/hkholidays.js</b>。請把這個檔案上傳到 js 資料夾，等幾分鐘後重開 app。</div>';
@@ -657,8 +661,10 @@
       '<button class="cal-nav" data-act="cal-next" aria-label="下個月">' + icon('chevR') + '</button></div>';
     h += '<div class="cal-grid">' + ['日', '一', '二', '三', '四', '五', '六'].map(w => '<div class="wd">' + w + '</div>').join('');
     for (let i = 0; i < lead; i++) h += '<div class="cal-day blank"></div>';
-    for (let d = 1; d <= D.daysInMonth(y, m); d++) {
-      const k = D.make(y, m, d);
+    for (let n = 1; n <= dim + trail; n++) {
+      const other = n > dim; // 下個月的日子
+      const k = other ? D.add(last, n - dim) : D.make(y, m, n);
+      const d = D.ymd(k)[2];
       const list = byDay[k] || [];
       const marks = list.filter(x => x.kind !== 'period' && x.kind !== 'holiday');
       const hol = list.find(x => x.kind === 'holiday' && !/星期日/.test(x.sub));
@@ -667,8 +673,9 @@
         return (x.kind === 'event' || x.kind === 'trip' || x.kind === 'birthday') && w && w !== 'both' ? '<i style="background:' + colorOf(w) + '"></i>' : HEART;
       }).join('');
       const dw = D.dow(k);
-      const cls = ['cal-day', k === t ? 'today' : '', k === ui.calSel ? 'sel' : '', pd[k] === 'period' ? 'period' : pd[k] === 'pred' ? 'period-pred' : '', dw === 0 || dw === 6 ? 'wkend' : '', hol || dw === 0 ? 'hol' : ''].join(' ');
-      h += '<button class="' + cls + '" data-act="cal-day" data-k="' + k + '"' + (hol ? ' title="' + esc(hol.title) + '"' : '') + '><span class="num">' + d + '</span><span class="dots">' + dots + '</span></button>';
+      const cls = ['cal-day', other ? 'other' : '', k === t ? 'today' : '', k === ui.calSel ? 'sel' : '', pd[k] === 'period' ? 'period' : pd[k] === 'pred' ? 'period-pred' : '', dw === 0 || dw === 6 ? 'wkend' : '', hol || dw === 0 ? 'hol' : ''].join(' ');
+      h += '<button class="' + cls + '" data-act="cal-day" data-k="' + k + '"' + (other ? ' aria-label="' + D.md(k) + '（下個月）"' : '') + (hol ? ' title="' + esc(hol.title) + '"' : '') + '>' +
+        (other && d === 1 ? '<span class="mlabel">' + D.ymd(k)[1] + '月</span>' : '') + '<span class="num">' + d + '</span><span class="dots">' + dots + '</span></button>';
     }
     h += '</div>';
     const [ty, tm] = D.ymd(t);
@@ -1441,7 +1448,12 @@
     'cal-next'() { shiftMonth(1); },
     'cal-pick': monthPicker,
     'cal-today'() { const [y, m] = D.ymd(D.today()); ui.calY = y; ui.calM = m; ui.calSel = D.today(); render(); },
-    'cal-day'(el) { ui.calSel = el.dataset.k; render(); },
+    'cal-day'(el) {
+      const k = el.dataset.k;
+      ui.calSel = k;
+      if (el.classList.contains('other')) { const [yy, mm] = D.ymd(k); ui.calY = yy; ui.calM = mm; } // 按下個月的日子：跳到那個月
+      render();
+    },
     'event-new'(el) { eventSheet(null, { date: (el && el.dataset.k) || ui.calSel || D.today() }); },
     'event-edit'(el) { eventSheet(el.dataset.id); },
     'day-new'() { daySheet(); },

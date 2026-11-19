@@ -229,24 +229,28 @@
     if (ui.y == null) { const [y, m] = D.ymd(t); ui.y = y; ui.m = m; }
     const y = ui.y, m = ui.m;
     const first = D.make(y, m, 1), dim = D.daysInMonth(y, m), last = D.make(y, m, dim);
-    const map = dayMap(D.add(first, -1), D.add(last, 1), I);
+    const trail = (7 - (D.dow(first) + dim) % 7) % 7; // 最後一行用下個月頭幾日填滿
+    const map = dayMap(D.add(first, -1), D.add(last, trail + 1), I);
     const grp = k => { const z = map[k]; if (!z || !z.type) return ''; return z.type === 'ovu' || z.type === 'fertile' ? 'fert' : z.type; };
     const lead = D.dow(first); // 星期日開始
     let h = '<div class="glass card" id="pcalCard"><div class="cal-head"><button class="cal-nav" data-act="pcal-move" data-d="-1">' + icon('chevL') + '</button><b style="font-size:19px">' + y + '年' + m + '月</b><button class="cal-nav" data-act="pcal-move" data-d="1">' + icon('chevR') + '</button></div>';
     h += '<div class="pcal-grid">' + ['日', '一', '二', '三', '四', '五', '六'].map(w => '<div class="wd">' + w + '</div>').join('');
     for (let i = 0; i < lead; i++) h += '<div></div>';
     const showLog = canSee('all', I);
-    for (let d = 1; d <= dim; d++) {
-      const k = D.make(y, m, d), z = map[k], g = grp(k);
-      const col = (lead + d - 1) % 7;
+    for (let n = 1; n <= dim + trail; n++) {
+      const other = n > dim; // 下個月的日子
+      const k = other ? D.add(last, n - dim) : D.make(y, m, n), d = D.ymd(k)[2], z = map[k], g = grp(k);
+      const col = (lead + n - 1) % 7;
       const cls = ['pd'];
+      if (other) cls.push('other');
       if (g) {
         cls.push('b-' + (z.type === 'ovu' ? 'ovu b-fertile' : z.type));
-        if (col === 0 || d === 1 || grp(D.add(k, -1)) !== g) cls.push('bs');
-        if (col === 6 || d === dim || grp(D.add(k, 1)) !== g) cls.push('be');
+        if (col === 0 || n === 1 || n === dim + 1 || grp(D.add(k, -1)) !== g) cls.push('bs');
+        if (col === 6 || n === dim || n === dim + trail || grp(D.add(k, 1)) !== g) cls.push('be');
       }
       if (k === t) cls.push('today');
-      h += '<button class="' + cls.join(' ') + '" data-act="p-day" data-k="' + k + '"><span class="band"></span><span class="num">' + d + '</span>' + (showLog && log(k) ? '<i class="pdot"></i>' : '') + '</button>';
+      h += '<button class="' + cls.join(' ') + '" data-act="p-day" data-k="' + k + '"' + (other ? ' data-other="1" aria-label="' + D.md(k) + '（下個月）"' : '') + '><span class="band"></span>' +
+        (other && d === 1 ? '<span class="mlabel">' + D.ymd(k)[1] + '月</span>' : '') + '<span class="num">' + d + '</span>' + (showLog && log(k) ? '<i class="pdot"></i>' : '') + '</button>';
     }
     h += '</div>';
     const [ty, tm] = D.ymd(t);
@@ -401,7 +405,11 @@
     'p-verify'(el) { verifySheet(el.dataset.id); },
     'p-edit'(el) { recordSheet(el.dataset.id); },
     'p-mood'(el) { moodSheet(el.dataset.k); },
-    'p-day'(el) { daySheet(el.dataset.k); },
+    'p-day'(el) {
+      const k = el.dataset.k;
+      if (el.dataset.other) { const [yy, mm] = D.ymd(k); ui.y = yy; ui.m = mm; A.render(); } // 下個月的日子：先跳到那個月
+      daySheet(k);
+    },
     'p-settings': settingsSheet,
     'pcal-move'(el) { let m = ui.m + Number(el.dataset.d), y = ui.y; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } ui.y = y; ui.m = m; A.render(); },
     'pcal-today'() { const [y, m] = D.ymd(D.today()); ui.y = y; ui.m = m; A.render(); },
