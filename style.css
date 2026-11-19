@@ -703,3 +703,15 @@ details.hist summary::-webkit-details-marker { display: none; }
 .rcp-ta { min-height: 0; resize: none; line-height: 1.5; overflow: hidden; }
 .rcp-actions { display: flex; gap: 10px; margin: 6px 0 0; }
 .rcp-actions .btn:last-child { flex: 1; }
+
+/* ====== 日曆：最後一行顯示下個月頭幾日（淡色，第一日標月份） ====== */
+.cal-day.other { opacity: .38; }
+.cal-day.other .num { font-weight: 400; }
+.cal-day.other.today { opacity: .6; }
+.cal-day .mlabel { position: absolute; top: -6px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700; line-height: 1; color: var(--accent-deep); white-space: nowrap; }
+.cal-day.other + .cal-day.other .mlabel { display: none; }
+
+/* 經期月曆：下個月頭幾日 */
+.pd.other { opacity: .38; }
+.pd.other.today { opacity: .6; }
+.pd .mlabel { position: absolute; top: -6px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700; line-height: 1; color: var(--accent-deep); white-space: nowrap; z-index: 1; }
